@@ -313,7 +313,6 @@ impl<'a> FragmentRenderer<'a> {
         let final_code = formatdoc!(
             r##"
             <script src="https://cdn.jsdelivr.net/npm/lzma@2.3.2/src/lzma_worker-min.js"></script>
-            <script src="brotli-decompress/bundle.js"></script>
             <script>
                 LZMA.decompress(Uint8Array.from(atob("{}"), function(c) {{ return c.charCodeAt(0); }}), 
                     function(result, error) {{

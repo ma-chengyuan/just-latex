@@ -80,9 +80,9 @@ SwiftLaTeX is the entire TeX engine compiled to WebAssembly and running in the b
 
 That's it. 10 steps, 1 file in, 1 file out.
 
-## Dependencies
+## Dependencies and Building
 
-To run this program you will need Pandoc and a TeX distribution. To build it you further need a Rust toolchain and a C toolchain. Clone this repo (with the `synctex` submodule), and run `cargo build`.
+To run this program you will need Pandoc and a TeX distribution. To build it you further need a Rust toolchain and a C toolchain. Clone this repo (make sure you use `git clone --recurse-submodules` so the `synctex` code is cloned), and run `cargo build`.
 
 ## Configuration
 
