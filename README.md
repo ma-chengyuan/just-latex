@@ -24,6 +24,8 @@ Another demo `examples/fwht.md` is actually a [blog post](https://danglingpointe
 
 The `examples` folder also contains a sample configuration file.
 
+*Note:* You can inspect the HTML code on Github here, but to actually see how it's rendered, you have to download the raw file -- Unfortunately somehow service like https://htmlpreview.github.io/ does not work here as the LZMA decompression script is not being loaded. Alternatively, `examples/demo.png` is a screenshot of the output HTML.
+
 ## Comparison with ...
 
 ### MathJaX and KaTeX
