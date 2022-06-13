@@ -15,7 +15,7 @@ just-latex is a simple [Pandoc](https://pandoc.org/) filter that chains a bunch 
 
 Please see `examples/demo.md` and `examples/demo.html` for a showcase of this program. The demo features the use of `cmbright` package to change the font, `tikz` to make a plot, and `algpseudocode` to typeset some pseudocode. The command to produce `demo.html` is (run it under `examples/`)
 ```bash
-pandoc demo.md --filter ../target/debug/renderer -o demo.html
+pandoc demo.md --filter ../target/debug/just-latex -o demo.html
 ```
 (assuming you have a debug build)
 The demo is partially adapted from [here](https://tex.stackexchange.com/questions/425098/which-opentype-math-fonts-are-available).
@@ -89,7 +89,7 @@ To run this program you will need Pandoc and a TeX distribution. To build it you
 ## Configuration
 
 Pandoc filters cannot take arguments directly from command line, so just-latex reads configuration from files at different locations:
-* It will first try to look for a `jlconfig.toml` under the same directory as the executable (this can be [ambiguous](https://doc.rust-lang.org/std/env/fn.current_exe.html) when symlinks are involved), and load that as a config file. 
+* It will first try looking for a `jlconfig.toml` under the same directory as the executable (this can be [ambiguous](https://doc.rust-lang.org/std/env/fn.current_exe.html) when symlinks are involved), and load that as a config file. 
 * Then it will look for a `jlconfig.toml` under the working directory, and load it if it's there.
 
 A config file does not need to specify all config items, as it merely overrides config items previously loaded. I also plan to add support for configuration on a per-document basis from the YAML metadata block in the future.
