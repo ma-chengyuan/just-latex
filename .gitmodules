@@ -1,0 +1,3 @@
+[submodule "synctex"]
+	path = synctex
+	url = https://github.com/jlaurens/synctex

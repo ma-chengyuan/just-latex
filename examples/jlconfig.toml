@@ -1,0 +1,11 @@
+preamble = '''
+\documentclass[12pt, fleqn]{article}
+\usepackage[top=0cm, bottom=0cm, left=0cm, right=0cm, paperheight=16000pt]{geometry}
+\usepackage{amsmath, amssymb, amsthm, bm, setspace, cmbright, tikz, algpseudocode, algorithm}
+\setlength{\parindent}{0pt}
+\begin{document}
+\setstretch{1.25}
+'''
+postamble = '\end{document}'
+latex = 'pdflatex'
+dvisvgm = 'dvisvgm'

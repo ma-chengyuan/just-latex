@@ -1,0 +1,23 @@
+[package]
+name = "renderer"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0"
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+indoc = "1.0"
+tempfile = "3"
+usvg = "0.23"
+xz2 = "0.1"
+base64 = "0.13"
+toml = "0.5"
+bytesize = "1.0"
+libz-sys = {version = "1.1.8", features = ["static"]}
+
+[build-dependencies]
+cc = "1.0"
+bindgen = "0.53.1"
