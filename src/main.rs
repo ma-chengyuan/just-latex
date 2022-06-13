@@ -146,6 +146,10 @@ impl<'a> FragmentRenderer<'a> {
     pub fn render_with_latex(mut self, tree: &'a mut Value) -> Result<()> {
         let final_node = self.walk_and_create_final_node(tree)?;
 
+        if self.fragments.is_empty() {
+            return Ok(());
+        }
+
         // dvisvgm does very spurious scaling to the output svg even when no magnification arguments
         // are passed. Besides the viewboxes are very weird.
         // x_svg = x_tex * 0.996264;
@@ -312,7 +316,7 @@ impl<'a> FragmentRenderer<'a> {
         );
         let final_code = formatdoc!(
             r##"
-            <script src="https://cdn.jsdelivr.net/npm/lzma@2.3.2/src/lzma_worker-min.js"></script>
+            {}
             <script>
                 LZMA.decompress(Uint8Array.from(atob("{}"), function(c) {{ return c.charCodeAt(0); }}), 
                     function(result, error) {{
@@ -328,7 +332,8 @@ impl<'a> FragmentRenderer<'a> {
                     function(p) {{}}
                 );
             </script>
-        "##,
+            "##,
+            self.config.lzma_script,
             svg_encoded
         );
         *final_node = json!({

@@ -53,6 +53,9 @@ define_config! {
     // Adjustment to inline rendering of fragments. The unit is pt.
     // A positive value makes inline fragments higher.
     baseline_rise: f64 = 0.0,
+    // The tag that inserts the LZMA decompressor.
+    lzma_script: String = 
+        r#"<script src="https://cdn.jsdelivr.net/npm/lzma@2.3.2/src/lzma-d-min.js"></script>"#,
 }
 
 impl Config {
