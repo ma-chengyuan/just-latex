@@ -13,6 +13,8 @@ just-latex is a simple [Pandoc](https://pandoc.org/) filter that chains a bunch 
 
 ## Demo
 
+![demo](examples/demo.png)
+
 Please see `examples/demo.md` and `examples/demo.html` for a showcase of this program. The demo features the use of `cmbright` package to change the font, `tikz` to make a plot, and `algpseudocode` to typeset some pseudocode. The command to produce `demo.html` is (run it under `examples/`)
 ```bash
 pandoc demo.md --filter ../target/debug/just-latex -o demo.html
