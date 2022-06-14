@@ -1,87 +1,94 @@
-use std::{env, fs};
+use std::{env, path::Path};
 
-use anyhow::{Context, Result};
+use anyhow::{format_err, Context, Result};
+use indoc::indoc;
 use serde::Deserialize;
 
-macro_rules! define_config {
-    ($($name:ident : $type:ty = $default:expr),+$(,)?) => {
-        #[derive(Clone, Debug)]
-        pub struct Config {
-            $(pub $name: $type,)*
-        }
+#[derive(Clone, Debug, Deserialize)]
+pub struct Config {
+    pub preamble: String,
+    pub postamble: String,
+    /// Path to the latex executable.
+    pub latex: String,
+    /// Path to the dvisvgm executable.
+    pub dvisvgm: String,
+    /// Defines the error tolerance for [`crate::x_range_for_y_range`] and 
+    /// [`crate::refine_y_range`].
+    pub y_range_tol: f64,
+    /// A blank horizontal margin to rendered inline fragments. The unit is pt.
+    ///
+    /// Tune it if you think the inline fragments are too close to the
+    /// surrounding text.
+    pub x_range_margin: f64,
+    /// A blank vertical margin to rendered block fragments. The unit is pt.
+    pub y_range_margin: f64,
+    /// Adjustment to inline rendering of fragments. The unit is pt.
+    ///
+    /// A positive value makes inline fragments higher.
+    pub baseline_rise: f64,
+    /// The tag that inserts the LZMA decompressor.
+    ///
+    /// But really it can also include anything you want to insert along at the end of the HTML.
+    pub lzma_script: String,
 
-        #[derive(Deserialize)]
-        pub struct ConfigUpdate {
-            $(#[serde(default)] $name: Option<$type>,)*
-        }
-
-        impl Config {
-            fn update(&mut self, update: ConfigUpdate) {
-                $(if let Some($name) = update.$name { self.$name = $name; })*
-            }
-        }
-
-        impl Default for Config {
-            fn default() -> Self {
-                Self {
-                    $($name: $default.into(),)*
-                }
-            }
-        }
-    };
+    /// Configuration related to templating of fragments.
+    pub template: TemplateConfig,
 }
 
-define_config! {
-    preamble: String = r"
-\documentclass[12pt, fleqn]{article}
-\usepackage[top=0cm, bottom=0cm, left=0cm, right=0cm, paperheight=16000pt]{geometry}
-\usepackage{amsmath, amssymb, amsthm, bm}
-\setlength{\parindent}{0pt}
-\begin{document}",
-    postamble: String = r"\end{document}",
-    // Path to the latex executable.
-    latex: String = "pdflatex",
-    // Path to dvisvgm.
-    dvisvgm: String = "dvisvgm",
-    // Defines the error tolerance for x_range_for_y_range procedure in main.rs.
-    // See that function for what this exactly means.
-    y_range_tol: f64 = 1.0,
-    // A blank margin to rendered elements. The unit is pt.
-    // Tune it if you think the inline fragments are too close to the
-    // surrounding text.
-    x_range_margin: f64 = 1.0,
-    // Adjustment to inline rendering of fragments. The unit is pt.
-    // A positive value makes inline fragments higher.
-    baseline_rise: f64 = 0.0,
-    // The tag that inserts the LZMA decompressor.
-    lzma_script: String = 
-        r#"<script src="https://cdn.jsdelivr.net/npm/lzma@2.3.2/src/lzma-d-min.js"></script>"#,
+#[derive(Clone, Debug, Deserialize)]
+pub struct TemplateConfig {
+    /// The placeholder that will be replaced by the fragment content for all templates below.
+    pub placeholder: String,
+    /// Template for inline math.
+    pub inline_math: String,
+    /// Template for display math.
+    pub display_math: String,
 }
 
 impl Config {
-    pub fn load() -> Self {
-        let mut result = Self::default();
-        let _ = result.load_from_current_exe();
-        let _ = result.load_from_working_dir();
-        result
-    }
+    pub fn load() -> Result<Self> {
+        let mut c = config::Config::builder()
+            .set_default(
+                "preamble",
+                indoc! {r"
+                \documentclass[12pt, fleqn]{article}
+                \usepackage[top=0cm, bottom=0cm, left=0cm, right=0cm, paperheight=16000pt]{geometry}
+                \usepackage{amsmath, amssymb, amsthm, bm}
+                \setlength{\parindent}{0pt}
+                \begin{document}"
+                },
+            )?
+            .set_default("postamble", r"\end{document}")?
+            .set_default("latex", "pdflatex")?
+            .set_default("dvisvgm", "dvisvgm")?
+            .set_default("y_range_tol", 1.0)?
+            .set_default("x_range_margin", 1.0)?
+            .set_default("baseline_rise", 0.0)?
+            .set_default("lzma_script", 
+            r#"<script src="https://cdn.jsdelivr.net/npm/lzma@2.3.2/src/lzma-d-min.js"></script>"#)?
+            // Default templates...
+            .set_default("template.placeholder", "{{fragment}}")?
+            .set_default("template.inline_math", r"\({{fragment}}\)")?
+            .set_default("template.display_math", indoc! {r"\[
+                    {{fragment}}
+                \]"})?;
 
-    fn load_from_current_exe(&mut self) -> Result<()> {
-        let exe_path = env::current_exe()?;
-        let config_path = exe_path
-            .parent()
-            .context("exe path has no parent")?
-            .join("jlconfig.toml");
-        let content = fs::read_to_string(config_path)?;
-        self.update(toml::from_str(&content)?);
-        eprintln!("Loaded configs from exe directory");
-        Ok(())
-    }
+        let exe_config = env::current_exe()?.join("jlconfig.toml");
+        if exe_config.exists() {
+            c = c.add_source(config::File::new(
+                exe_config
+                    .to_str()
+                    .context("cannot convert path to string")?,
+                config::FileFormat::Toml,
+            ));
+        }
 
-    fn load_from_working_dir(&mut self) -> Result<()> {
-        let content = fs::read_to_string("jlconfig.toml")?;
-        self.update(toml::from_str(&content)?);
-        eprintln!("Loaded configs from working directory");
-        Ok(())
+        if Path::new("jlconfig.toml").exists() {
+            c = c.add_source(config::File::new("jlconfig.toml", config::FileFormat::Toml));
+        }
+
+        c.build()?
+            .try_deserialize()
+            .map_err(|e| format_err!("cannot load config: {}", e))
     }
 }

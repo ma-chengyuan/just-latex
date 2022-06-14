@@ -1,6 +1,5 @@
-use anyhow::{bail, Context as AnyhowContext, Result};
+use anyhow::{bail, Context, Result};
 use bytesize::ByteSize;
-use config::Config;
 use indoc::formatdoc;
 use serde_json::{json, Value};
 use std::{
@@ -16,13 +15,14 @@ use tempfile::TempDir;
 use usvg::{NodeExt, PathBbox};
 use xz2::{read::XzEncoder, stream::LzmaOptions};
 
+use crate::config::Config;
 use crate::synctex::Scanner;
 
 mod config;
 mod synctex;
 
 fn main() -> Result<()> {
-    let config = Config::load();
+    let config = Config::load()?;
     let mut buffer = String::new();
     let _ = stdin().read_to_string(&mut buffer)?;
 
@@ -114,25 +114,18 @@ impl<'a> FragmentRenderer<'a> {
         output.push('\n');
         let mut current_line = preamble_trimmed.lines().count() + 1;
         for item in self.fragments.iter() {
-            match item.ty {
-                FragmentType::InlineMath => output.push('$'),
-                FragmentType::DisplayMath => {
-                    output.push_str("\\[\n");
-                    current_line += 1;
+            let template = match item.ty {
+                FragmentType::InlineMath => &self.config.template.inline_math,
+                FragmentType::DisplayMath => &self.config.template.display_math,
+                FragmentType::RawBlock | FragmentType::DontShow => {
+                    &self.config.template.placeholder
                 }
-                FragmentType::RawBlock | FragmentType::DontShow => {}
-            }
+            };
+            let expanded = template.replace(&self.config.template.placeholder, &item.src);
+            let expanded = expanded.trim_end();
             let start_line = current_line;
-            output.push_str(&item.src);
-            current_line += item.src.lines().count();
-            match item.ty {
-                FragmentType::InlineMath => output.push('$'),
-                FragmentType::DisplayMath => {
-                    output.push_str("\n\\]");
-                    current_line += 1;
-                }
-                FragmentType::RawBlock | FragmentType::DontShow => {}
-            }
+            output.push_str(expanded);
+            current_line += expanded.lines().count();
             lines.push(start_line..current_line);
             output.push_str("\n\n");
             current_line += 1;
@@ -262,6 +255,11 @@ impl<'a> FragmentRenderer<'a> {
                 self.config.x_range_margin,
             )
             .unwrap_or(x_range);
+
+            if let FragmentType::DisplayMath | FragmentType::RawBlock = item.ty {
+                y_range =
+                    refine_y_range(&bboxes, y_range.0, y_range.1, self.config.y_range_tol, 1.0);
+            }
 
             let depth = match item.ty {
                 FragmentType::InlineMath => y_range.1 - baseline.0,
@@ -479,6 +477,7 @@ impl<'a> FragmentRenderer<'a> {
 }
 
 fn svg_to_bboxes(node: usvg::Node, results: &mut Vec<PathBbox>) {
+    // TODO: may be look into node.traverse()?
     if node.has_children() {
         for ch in node.children() {
             svg_to_bboxes(ch, results);
@@ -512,5 +511,29 @@ fn x_range_for_y_range(
         None
     } else {
         Some((x_min - margin, x_max + margin))
+    }
+}
+
+fn refine_y_range(
+    bboxes: &[PathBbox],
+    y_min: f64,
+    y_max: f64,
+    tol: f64,
+    margin: f64,
+) -> (f64, f64) {
+    let mut new_y_min = f64::MAX;
+    let mut new_y_max = f64::MIN;
+    let y_min = y_min - tol;
+    let y_max = y_max + tol;
+    for bbox in bboxes {
+        if y_min <= bbox.top() && bbox.bottom() <= y_max {
+            new_y_min = new_y_min.min(bbox.top());
+            new_y_max = new_y_max.max(bbox.bottom());
+        }
+    }
+    if new_y_min == f64::MAX {
+        (y_min + tol - margin, y_max - tol + margin)
+    } else {
+        (new_y_min - margin, new_y_max + margin)
     }
 }

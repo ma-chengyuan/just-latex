@@ -1,6 +1,6 @@
 [package]
 name = "just-latex"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "A simple Pandoc filter enabling the use of the actual LaTeX engine to render LaTeX fragments in Markdown."
 readme = "README.md"
@@ -20,8 +20,8 @@ tempfile = "3"
 usvg = "0.23"
 xz2 = "0.1"
 base64 = "0.13"
-toml = "0.5"
 bytesize = "1.0"
+config = "0.13"
 libz-sys = {version = "1.1.8", features = ["static"]}
 
 [build-dependencies]
