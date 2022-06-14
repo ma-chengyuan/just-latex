@@ -2,6 +2,12 @@
 name = "just-latex"
 version = "0.1.0"
 edition = "2021"
+description = "A simple Pandoc filter enabling the use of the actual LaTeX engine to render LaTeX fragments in Markdown."
+readme = "README.md"
+license = "MIT"
+repository = "https://github.com/ma-chengyuan/just-latex"
+keywords = ["pandoc", "latex", "markdown", "svg"]
+categories = ["command-line-utilities"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
