@@ -3,7 +3,7 @@
 **How do you render LaTeX fragments on the Web? MathJaX? KaTeX? Why not ... just use LaTeX?**
 
 ![license](https://img.shields.io/badge/license-MIT-red)
-[![shield](https://img.shields.io/badge/crates.io-0.1.0-green)](https://crates.io/crates/just-latex)
+[![shield](https://img.shields.io/badge/crates.io-0.1.1-green)](https://crates.io/crates/just-latex)
 
 just-latex is a simple [Pandoc](https://pandoc.org/) filter that chains a bunch of existing tools in the TeX ecosystem, enabling the use of the actual LaTeX engine to render LaTeX fragments when converting to HTML. It aims to occupy a niche and provide a new option for users hampered by MathJaX or KaTeX.
 

@@ -166,7 +166,7 @@ impl<'a> FragmentRenderer<'a> {
             source.write_all(source_str.as_bytes())?;
         }
         let pdf_path = working_path.join("source.pdf");
-        let latex_command = Command::new("pdflatex")
+        let latex_command = Command::new(self.config.latex)
             .args([
                 "-synctex=-1",
                 "-interaction=nonstopmode",
@@ -185,7 +185,7 @@ impl<'a> FragmentRenderer<'a> {
         // Right now we assume everything fits in one page so there's only one svg generated.
         // This requires a page to be REALLY long/high. TeX can handle at most 65536pt -- I assume
         // this is enough as long as we are not writing a book.
-        let dvisvgm_command = Command::new("dvisvgm")
+        let dvisvgm_command = Command::new(self.config.dvisvgm)
             .args(["-s", "-R", "-P", pdf_path.to_str().unwrap()])
             .current_dir(&working_path)
             .output()?;
