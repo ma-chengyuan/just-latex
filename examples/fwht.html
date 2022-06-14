@@ -14,59 +14,59 @@ competitive programming.</li>
 <p>Recall what we would do if we are to quickly calculate the following
 convolution of two sequences
 <img src="#svgView(viewBox(0.06,-15933.89,6.70,5.65))" 
-class="svg-math" 
+class="svg-math" alt = "a"
 style="width:6.70pt;height:5.65pt;
 top:0.00pt;position:relative;"> and
 <img src="#svgView(viewBox(-0.03,-15917.87,7.27,8.30))" 
-class="svg-math" 
+class="svg-math" alt = "b"
 style="width:7.27pt;height:8.30pt;
 top:0.00pt;position:relative;">, each of length
 <img src="#svgView(viewBox(-0.03,-15896.53,7.14,5.65))" 
-class="svg-math" 
+class="svg-math" alt = "n"
 style="width:7.14pt;height:5.65pt;
 top:0.00pt;position:relative;">:
 <p><img src="#svgView(viewBox(29.13,-15856.58,225.89,38.48))" 
-class="svg-math" 
+class="svg-math" alt = "\{a\circledast b\}_i=\sum_{j+k=i}a_{j}b_k \Bigg/ \{a\circledast b\}_i=\sum_{j=0}^ia_{j}b_{i-j}"
 style="width:225.89pt;height:38.48pt;
 top:0.00pt;position:relative;"></p> We use FFT, which applies the
 following transformation to the input sequence:
 <p><img src="#svgView(viewBox(28.50,-15784.72,90.80,36.22))" 
-class="svg-math" 
+class="svg-math" alt = "\mathcal{F}\{a\}_i = \sum_{j=0}^n a_j\omega_{n}^{ij}"
 style="width:90.80pt;height:36.22pt;
 top:0.00pt;position:relative;"></p> Since the calculation of this
 transformation (and its inverse) can be done in a divide-and-conquer
 manner in <img src="#svgView(viewBox(-0.32,-15732.39,51.90,11.62))" 
-class="svg-math" 
+class="svg-math" alt = "\mathcal O(n\log n)"
 style="width:51.90pt;height:11.62pt;
 top:2.66pt;position:relative;"> and the element wise product of the
 transformation is equivalent to the convolution on the original series,
 we are able to calculate the convolution in
 <img src="#svgView(viewBox(-0.32,-15732.39,51.90,11.62))" 
-class="svg-math" 
+class="svg-math" alt = "\mathcal O(n\log n)"
 style="width:51.90pt;height:11.62pt;
 top:2.66pt;position:relative;">.</p>
 <p>Now we try to generalize our findings to a more general case:
 <p><img src="#svgView(viewBox(29.13,-15683.70,102.64,28.90))" 
-class="svg-math" 
+class="svg-math" alt = "\{a\circledast b\}_i=\sum_{j \star k=i}a_jb_k"
 style="width:102.64pt;height:28.90pt;
 top:0.00pt;position:relative;"></p> where
 <img src="#svgView(viewBox(-1.19,-15638.72,8.36,5.73))" 
-class="svg-math" 
+class="svg-math" alt = "\star"
 style="width:8.36pt;height:5.73pt;
 top:0.00pt;position:relative;"> is some binary operation. The
 convolution we see at the beginning is a special case where
 <img src="#svgView(viewBox(-1.19,-15621.45,32.73,7.97))" 
-class="svg-math" 
+class="svg-math" alt = "\star = +"
 style="width:32.73pt;height:7.97pt;
 top:0.83pt;position:relative;">.</p>
 <p>FWHT is an algorithm that borrows similar notions from FFT and is
 able to compute the convolution in
 <img src="#svgView(viewBox(-0.32,-15604.60,51.90,11.62))" 
-class="svg-math" 
+class="svg-math" alt = "\mathcal O(n \log n)"
 style="width:51.90pt;height:11.62pt;
 top:2.66pt;position:relative;"> time for
 <img src="#svgView(viewBox(-1.19,-15584.09,59.64,8.47))" 
-class="svg-math" 
+class="svg-math" alt = "\star =\vee,\wedge,\oplus"
 style="width:59.64pt;height:8.47pt;
 top:1.33pt;position:relative;"> (bitwise OR, bitwise AND, and bitwise
 XOR). Why do the convolutions of these bitwise operations matter?
@@ -77,46 +77,52 @@ accelerate set-based DPs.</p>
 <h1 id="bitwise-or-convolution">Bitwise OR convolution</h1>
 <p>Let’s start with the convolution with respect to bitwise OR:
 <p><img src="#svgView(viewBox(29.13,-15537.20,104.06,28.90))" 
-class="svg-math" 
+class="svg-math" alt = "\{a\circledast b\}_i = \sum_{j\vee k=i}a_jb_k"
 style="width:104.06pt;height:28.90pt;
 top:0.00pt;position:relative;"></p> We start by exploiting an
 interesting property of bitwise OR:
 <p><img src="#svgView(viewBox(28.28,-15467.37,202.83,13.63))" 
-class="svg-math" 
+class="svg-math" alt = "x \vee z = z,y\vee z = z \Leftrightarrow (x\vee y)\vee z=z"
 style="width:202.83pt;height:13.63pt;
 top:0.00pt;position:relative;"></p> or its clearer equivalent in
 set-based notations:
 <p><img src="#svgView(viewBox(28.44,-15400.17,159.75,13.63))" 
-class="svg-math" 
+class="svg-math" alt = "X\subseteq Z,Y\subseteq Z \Leftrightarrow (X\cup Y)\subseteq Z"
 style="width:159.75pt;height:13.63pt;
 top:0.00pt;position:relative;"></p> <strong>Claim:</strong> The
 following transformation can turn OR convolutions to element-wise
 multiplications:
 <p><img src="#svgView(viewBox(28.50,-15335.50,112.27,28.90))" 
-class="svg-math" 
+class="svg-math" alt = "\mathcal{FWHT}\{a\}_i=\sum_{j\vee i=i} a_j"
 style="width:112.27pt;height:28.90pt;
 top:0.00pt;position:relative;"></p> <strong>Proof:</strong>
 <p><img src="#svgView(viewBox(28.50,-15274.38,258.53,160.73))" 
-class="svg-math" 
+class="svg-math" alt = "\begin{aligned}
+\mathcal{FWHT}\{a\}_i\cdot\mathcal{FWHT}\{b\}_i &amp;= \left(\sum_{j\vee i=i}a_j\right) \left(\sum_{k\vee i=i}b_k\right) \\
+&amp;= \sum_{j\vee i=i}\sum_{k\vee i=i}a_jb_k \\
+&amp;= \sum_{(j\vee k)\vee i=i} a_jb_k \\
+&amp;= \sum_{l\vee i = i}\sum_{j \vee k = l} a_jb_k\\
+&amp;= \mathcal{FWHT}\{a\circledast b\}_i
+\end{aligned}"
 style="width:258.53pt;height:160.73pt;
 top:0.00pt;position:relative;"></p> Then how are we able to compute
 <img src="#svgView(viewBox(-0.76,-15095.74,61.26,11.62))" 
-class="svg-math" 
+class="svg-math" alt = "\mathcal{FWHT}\{a\}"
 style="width:61.26pt;height:11.62pt;
 top:2.66pt;position:relative;"> quickly? A trivial implementation still
 takes <img src="#svgView(viewBox(-0.32,-15077.66,31.23,12.23))" 
-class="svg-math" 
+class="svg-math" alt = "\mathcal O(n^2)"
 style="width:31.23pt;height:12.23pt;
 top:2.66pt;position:relative;"> time.</p>
 <p>Recall what we did in FFT: we divide
 <img src="#svgView(viewBox(0.06,-15933.89,6.70,5.65))" 
-class="svg-math" 
+class="svg-math" alt = "a"
 style="width:6.70pt;height:5.65pt;
 top:0.00pt;position:relative;"> into two subsequences based on parity of
 indices, a.k.a, the last bit of indices. We did this because the root of
 unity has such amazing property as
 <img src="#svgView(viewBox(-0.77,-15061.28,52.56,17.41))" 
-class="svg-math" 
+class="svg-math" alt = "\omega_n^k=\omega_{n/2}^{k/2}"
 style="width:52.56pt;height:17.41pt;
 top:5.54pt;position:relative;">. We could do that here as well, but a
 limitation of dividing based on the last bit is that the order of
@@ -127,158 +133,169 @@ much. Why not simply <strong>divide based on the first, or the most
 significant bit</strong>, such that the order of elements is preserved
 in the process? Dividing based on the highest bit of indices, simply
 put, is to split <img src="#svgView(viewBox(0.06,-15933.89,6.70,5.65))" 
-class="svg-math" 
+class="svg-math" alt = "a"
 style="width:6.70pt;height:5.65pt;
 top:0.00pt;position:relative;"> into the first half,
 <img src="#svgView(viewBox(0.06,-15040.30,11.02,9.57))" 
-class="svg-math" 
+class="svg-math" alt = "a^0"
 style="width:11.02pt;height:9.57pt;
 top:0.00pt;position:relative;">, and the second half,
 <img src="#svgView(viewBox(0.06,-15021.62,10.74,9.57))" 
-class="svg-math" 
+class="svg-math" alt = "a^1"
 style="width:10.74pt;height:9.57pt;
 top:0.00pt;position:relative;">, in their natural order.</p>
 <p>Here I introduce a notation,
 <img src="#svgView(viewBox(0.26,-15002.34,16.10,11.62))" 
-class="svg-math" 
+class="svg-math" alt = "1|a"
 style="width:16.10pt;height:11.62pt;
 top:2.66pt;position:relative;"> or
 <img src="#svgView(viewBox(-0.38,-14983.66,16.74,11.62))" 
-class="svg-math" 
+class="svg-math" alt = "0|a"
 style="width:16.74pt;height:11.62pt;
 top:2.66pt;position:relative;">. In the context where the length of the
 sequence is <img src="#svgView(viewBox(-0.03,-15896.53,7.14,5.65))" 
-class="svg-math" 
+class="svg-math" alt = "n"
 style="width:7.14pt;height:5.65pt;
 top:0.00pt;position:relative;"> (and
 <img src="#svgView(viewBox(-0.03,-15896.53,7.14,5.65))" 
-class="svg-math" 
+class="svg-math" alt = "n"
 style="width:7.14pt;height:5.65pt;
 top:0.00pt;position:relative;"> is a power of
 <img src="#svgView(viewBox(-0.46,-14963.85,7.11,7.84))" 
-class="svg-math" 
+class="svg-math" alt = "2"
 style="width:7.11pt;height:7.84pt;
 top:0.00pt;position:relative;">),
 <img src="#svgView(viewBox(0.26,-14946.30,59.70,12.92))" 
-class="svg-math" 
+class="svg-math" alt = "1|a=\frac{n}{2}+a"
 style="width:59.70pt;height:12.92pt;
 top:3.96pt;position:relative;"> where
 <img src="#svgView(viewBox(-0.38,-14927.62,63.72,11.62))" 
-class="svg-math" 
+class="svg-math" alt = "0\le a&lt;n/2"
 style="width:63.72pt;height:11.62pt;
 top:2.66pt;position:relative;">, and
 <img src="#svgView(viewBox(-0.38,-14983.66,16.74,11.62))" 
-class="svg-math" 
+class="svg-math" alt = "0|a"
 style="width:16.74pt;height:11.62pt;
 top:2.66pt;position:relative;"> is just
 <img src="#svgView(viewBox(0.06,-15933.89,6.70,5.65))" 
-class="svg-math" 
+class="svg-math" alt = "a"
 style="width:6.70pt;height:5.65pt;
 top:0.00pt;position:relative;">. In other words,
 <img src="#svgView(viewBox(0.26,-15002.34,16.10,11.62))" 
-class="svg-math" 
+class="svg-math" alt = "1|a"
 style="width:16.10pt;height:11.62pt;
 top:2.66pt;position:relative;"> has
 <img src="#svgView(viewBox(0.26,-14907.81,5.98,7.84))" 
-class="svg-math" 
+class="svg-math" alt = "1"
 style="width:5.98pt;height:7.84pt;
 top:0.00pt;position:relative;"> as the highest bit and
 <img src="#svgView(viewBox(-0.38,-14983.66,16.74,11.62))" 
-class="svg-math" 
+class="svg-math" alt = "0|a"
 style="width:16.74pt;height:11.62pt;
 top:2.66pt;position:relative;"> has
 <img src="#svgView(viewBox(-0.38,-14889.13,7.02,7.84))" 
-class="svg-math" 
+class="svg-math" alt = "0"
 style="width:7.02pt;height:7.84pt;
 top:0.00pt;position:relative;"> as the highest bit.</p>
 <p>(Note using this notation,
 <img src="#svgView(viewBox(0.06,-14872.18,42.96,13.20))" 
-class="svg-math" 
+class="svg-math" alt = "a^0_i = a_{0|i}"
 style="width:42.96pt;height:13.20pt;
 top:3.63pt;position:relative;"> and
 <img src="#svgView(viewBox(0.06,-14853.50,42.96,13.20))" 
-class="svg-math" 
+class="svg-math" alt = "a^1_i = a_{1|i}"
 style="width:42.96pt;height:13.20pt;
 top:3.63pt;position:relative;">)</p>
 <p>To make our writing clearer, denote
 <p><img src="#svgView(viewBox(28.50,-14806.27,99.06,58.32))" 
-class="svg-math" 
+class="svg-math" alt = "\begin{aligned}
+\mathcal{FWHT}\{a\} &amp;= A \\
+\mathcal{FWHT}\left\{a^0\right\} &amp;= A^0 \\
+\mathcal{FWHT}\left\{a^1\right\} &amp;= A^1 \\
+\end{aligned}"
 style="width:99.06pt;height:58.32pt;
 top:0.00pt;position:relative;"></p> We want to express each element of
 <img src="#svgView(viewBox(-0.65,-14731.35,9.36,8.30))" 
-class="svg-math" 
+class="svg-math" alt = "A"
 style="width:9.36pt;height:8.30pt;
 top:0.00pt;position:relative;"> as a combination of some element in
 <img src="#svgView(viewBox(-0.65,-14713.94,13.72,9.57))" 
-class="svg-math" 
+class="svg-math" alt = "A^0"
 style="width:13.72pt;height:9.57pt;
 top:0.00pt;position:relative;"> and
 <img src="#svgView(viewBox(-0.65,-14695.26,13.44,9.57))" 
-class="svg-math" 
+class="svg-math" alt = "A^1"
 style="width:13.44pt;height:9.57pt;
 top:0.00pt;position:relative;">.</p>
 <p>We first look at the first half of
 <img src="#svgView(viewBox(-0.65,-14731.35,9.36,8.30))" 
-class="svg-math" 
+class="svg-math" alt = "A"
 style="width:9.36pt;height:8.30pt;
 top:0.00pt;position:relative;">. Using the notation I defined above,
 these elements can be expressed as
 <img src="#svgView(viewBox(-0.65,-14675.31,18.92,11.93))" 
-class="svg-math" 
+class="svg-math" alt = "A_{0|i}"
 style="width:18.92pt;height:11.93pt;
 top:3.63pt;position:relative;">.
 <p><img src="#svgView(viewBox(28.61,-14631.90,184.35,64.07))" 
-class="svg-math" 
+class="svg-math" alt = "\begin{aligned}
+A_{0|i}&amp;=\sum_{j\vee (0|i)=0|i}a_j \\
+&amp;= \sum_{(0|j)\vee (0|i)=0|i}a^0_j + \sum_{(1|j)\vee (0|i)=0|i}a^1_j \\
+\end{aligned}"
 style="width:184.35pt;height:64.07pt;
 top:0.00pt;position:relative;"></p> We know that the highest bit of
 <img src="#svgView(viewBox(0.10,-14551.62,59.87,11.62))" 
-class="svg-math" 
+class="svg-math" alt = "(1|j)\vee (0|i)"
 style="width:59.87pt;height:11.62pt;
 top:2.66pt;position:relative;"> should always be
 <img src="#svgView(viewBox(0.26,-14907.81,5.98,7.84))" 
-class="svg-math" 
+class="svg-math" alt = "1"
 style="width:5.98pt;height:7.84pt;
 top:0.00pt;position:relative;">, so the condition in the second
 summation is never satisfied, and we can simply throw the second term
 away. And <img src="#svgView(viewBox(0.10,-14532.94,89.99,11.62))" 
-class="svg-math" 
+class="svg-math" alt = "(0|j)\vee (0|i)=0|i"
 style="width:89.99pt;height:11.62pt;
 top:2.66pt;position:relative;"> simplifies to
 <img src="#svgView(viewBox(-2.29,-14513.60,44.06,10.29))" 
-class="svg-math" 
+class="svg-math" alt = "j\vee i =i"
 style="width:44.06pt;height:10.29pt;
 top:1.99pt;position:relative;">, so we get, by definition of
 <img src="#svgView(viewBox(-0.65,-14713.94,13.72,9.57))" 
-class="svg-math" 
+class="svg-math" alt = "A^0"
 style="width:13.72pt;height:9.57pt;
 top:0.00pt;position:relative;">:
 <p><img src="#svgView(viewBox(28.61,-14464.36,47.69,15.93))" 
-class="svg-math" 
+class="svg-math" alt = "A_{0|i} = A^0_i"
 style="width:47.69pt;height:15.93pt;
 top:0.00pt;position:relative;"></p> What about the second half,
 <img src="#svgView(viewBox(-0.65,-14427.67,18.92,11.93))" 
-class="svg-math" 
+class="svg-math" alt = "A_{1|i}"
 style="width:18.92pt;height:11.93pt;
 top:3.63pt;position:relative;">?
 <p><img src="#svgView(viewBox(28.61,-14384.20,184.35,85.30))" 
-class="svg-math" 
+class="svg-math" alt = "\begin{aligned}
+A_{1|i}&amp;=\sum_{j\vee (1|i)=1|i}a_j \\
+&amp;= \sum_{(0|j)\vee (1|i)=1|i}a^0_j + \sum_{(1|j)\vee (1|i)=1|i}a^1_j \\
+&amp;= A_i^0+A_i^1
+\end{aligned}"
 style="width:184.35pt;height:85.30pt;
 top:0.00pt;position:relative;"></p> Together we get:
 <p><img src="#svgView(viewBox(28.61,-14259.08,93.88,16.33))" 
-class="svg-math" 
+class="svg-math" alt = "A=\left(A^0, A^0+A^1\right)"
 style="width:93.88pt;height:16.33pt;
 top:0.00pt;position:relative;"></p> with the trivial recursion boundary
 <img src="#svgView(viewBox(-0.65,-14222.37,40.47,10.10))" 
-class="svg-math" 
+class="svg-math" alt = "A_0=a_0"
 style="width:40.47pt;height:10.10pt;
 top:1.79pt;position:relative;"> when
 <img src="#svgView(viewBox(-0.03,-14203.22,29.10,7.84))" 
-class="svg-math" 
+class="svg-math" alt = "n=0"
 style="width:29.10pt;height:7.84pt;
 top:0.00pt;position:relative;">.</p>
 <p>(here I use the tuple notation to denote concatenation, and
 <img src="#svgView(viewBox(-0.33,-14183.84,9.95,7.97))" 
-class="svg-math" 
+class="svg-math" alt = "+"
 style="width:9.95pt;height:7.97pt;
 top:0.83pt;position:relative;"> to denote element-wise addition).</p>
 <p>This is something we can write an in-place implementation for with
@@ -293,49 +310,52 @@ class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb1-1"><a href="#c
 <span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
 <p>Its time complexity is obviously
 <img src="#svgView(viewBox(-0.32,-15732.39,51.90,11.62))" 
-class="svg-math" 
+class="svg-math" alt = "\mathcal O(n\log n)"
 style="width:51.90pt;height:11.62pt;
 top:2.66pt;position:relative;"> with a really small constant factor.</p>
 <p>Its reverse transform turns out to be simple as well, suppose we know
 <img src="#svgView(viewBox(-0.65,-14731.35,9.36,8.30))" 
-class="svg-math" 
+class="svg-math" alt = "A"
 style="width:9.36pt;height:8.30pt;
 top:0.00pt;position:relative;"> and let
 <p><img src="#svgView(viewBox(28.61,-14134.85,63.82,14.11))" 
-class="svg-math" 
+class="svg-math" alt = "A=(A',A'')"
 style="width:63.82pt;height:14.11pt;
 top:0.00pt;position:relative;"></p> (Assuming
 <img src="#svgView(viewBox(-0.03,-15896.53,7.14,5.65))" 
-class="svg-math" 
+class="svg-math" alt = "n"
 style="width:7.14pt;height:5.65pt;
 top:0.00pt;position:relative;"> is a power of
 <img src="#svgView(viewBox(-0.46,-14963.85,7.11,7.84))" 
-class="svg-math" 
+class="svg-math" alt = "2"
 style="width:7.11pt;height:7.84pt;
 top:0.00pt;position:relative;"> and
 <img src="#svgView(viewBox(-0.65,-14099.54,11.88,8.77))" 
-class="svg-math" 
+class="svg-math" alt = "A'"
 style="width:11.88pt;height:8.77pt;
 top:0.00pt;position:relative;"> and
 <img src="#svgView(viewBox(-0.65,-14080.86,14.17,8.77))" 
-class="svg-math" 
+class="svg-math" alt = "A''"
 style="width:14.17pt;height:8.77pt;
 top:0.00pt;position:relative;"> each have length
 <img src="#svgView(viewBox(-0.03,-14062.38,19.13,11.62))" 
-class="svg-math" 
+class="svg-math" alt = "n/2"
 style="width:19.13pt;height:11.62pt;
 top:2.66pt;position:relative;">)</p>
 <p>Then we can recover
 <img src="#svgView(viewBox(-0.65,-14713.94,13.72,9.57))" 
-class="svg-math" 
+class="svg-math" alt = "A^0"
 style="width:13.72pt;height:9.57pt;
 top:0.00pt;position:relative;"> and
 <img src="#svgView(viewBox(-0.65,-14695.26,13.44,9.57))" 
-class="svg-math" 
+class="svg-math" alt = "A^1"
 style="width:13.44pt;height:9.57pt;
 top:0.00pt;position:relative;">:
 <p><img src="#svgView(viewBox(30.30,-14018.89,77.53,45.03))" 
-class="svg-math" 
+class="svg-math" alt = "\begin{cases}
+    A^0=A'\\
+    A^1=A''-A'
+\end{cases}"
 style="width:77.53pt;height:45.03pt;
 top:0.00pt;position:relative;"></p> Implementation:</p>
 <div class="sourceCode" id="cb2"><pre
@@ -366,7 +386,7 @@ same.)</p>
 <h1 id="bitwise-and-convolution">Bitwise AND convolution</h1>
 <p>The bitwise AND convolution
 <p><img src="#svgView(viewBox(29.13,-13937.00,104.06,28.90))" 
-class="svg-math" 
+class="svg-math" alt = "\{a\circledast b\}_i = \sum_{j\wedge k=i}a_jb_k"
 style="width:104.06pt;height:28.90pt;
 top:0.00pt;position:relative;"></p> can be accelerated in a similar
 way.</p>
@@ -374,72 +394,79 @@ way.</p>
 to an OR convolution)</p>
 <p>Note that AND also has this interesting property:
 <p><img src="#svgView(viewBox(28.28,-13867.17,202.83,13.63))" 
-class="svg-math" 
+class="svg-math" alt = "x \wedge z = z,y\wedge z = z \Leftrightarrow (x\wedge y)\wedge z=z"
 style="width:202.83pt;height:13.63pt;
 top:0.00pt;position:relative;"></p> or in set notations:
 <p><img src="#svgView(viewBox(28.96,-13799.87,158.48,13.63))" 
-class="svg-math" 
+class="svg-math" alt = "Z\subseteq X,Z\subseteq Y \Leftrightarrow Z\subseteq(X\cap Y)"
 style="width:158.48pt;height:13.63pt;
 top:0.00pt;position:relative;"></p> Thus, we can prove in a way similar
 to what we did in OR convolution that the transform
 <p><img src="#svgView(viewBox(28.50,-13735.20,112.27,28.90))" 
-class="svg-math" 
+class="svg-math" alt = "\mathcal{FWHT}\{a\}_i=\sum_{j\wedge i=i} a_j"
 style="width:112.27pt;height:28.90pt;
 top:0.00pt;position:relative;"></p> can turn convolutions to
 element-wise multiplications.</p>
 <p>We still adopt the same divide-and-conquer approach and continue to
 use the notations
 <img src="#svgView(viewBox(0.06,-13690.26,89.32,10.90))" 
-class="svg-math" 
+class="svg-math" alt = "a, a^0,a^1,A,A^0,A^1"
 style="width:89.32pt;height:10.90pt;
 top:1.33pt;position:relative;">.</p>
 <p>Consider the first half of
 <img src="#svgView(viewBox(-0.65,-14731.35,9.36,8.30))" 
-class="svg-math" 
+class="svg-math" alt = "A"
 style="width:9.36pt;height:8.30pt;
 top:0.00pt;position:relative;">, which can be expressed as
 <img src="#svgView(viewBox(-0.65,-14675.31,18.92,11.93))" 
-class="svg-math" 
+class="svg-math" alt = "A_{0|i}"
 style="width:18.92pt;height:11.93pt;
 top:3.63pt;position:relative;">:
 <p><img src="#svgView(viewBox(28.61,-13645.50,184.35,64.07))" 
-class="svg-math" 
+class="svg-math" alt = "\begin{aligned}
+A_{0|i}&amp;=\sum_{j\wedge (0|i)=0|i}a_j \\
+&amp;= \sum_{(0|j)\wedge (0|i)=0|i}a^0_j + \sum_{(1|j)\wedge (0|i)=0|i}a^1_j \\
+\end{aligned}"
 style="width:184.35pt;height:64.07pt;
 top:0.00pt;position:relative;"></p> And by the properties of AND, both
 <img src="#svgView(viewBox(0.10,-13565.30,89.99,11.62))" 
-class="svg-math" 
+class="svg-math" alt = "(0|j)\wedge (0|i)=0|i"
 style="width:89.99pt;height:11.62pt;
 top:2.66pt;position:relative;"> and
 <img src="#svgView(viewBox(0.10,-13546.62,89.99,11.62))" 
-class="svg-math" 
+class="svg-math" alt = "(1|j)\wedge (0|i)=0|i"
 style="width:89.99pt;height:11.62pt;
 top:2.66pt;position:relative;"> simplify to
 <img src="#svgView(viewBox(-2.29,-13527.27,44.06,10.29))" 
-class="svg-math" 
+class="svg-math" alt = "j\wedge i=i"
 style="width:44.06pt;height:10.29pt;
 top:1.99pt;position:relative;">. So by definition we get
 <p><img src="#svgView(viewBox(28.61,-13477.96,75.03,15.93))" 
-class="svg-math" 
+class="svg-math" alt = "A_{0|i}=A^0_i+A_i^1"
 style="width:75.03pt;height:15.93pt;
 top:0.00pt;position:relative;"></p> Then consider the other half of
 <img src="#svgView(viewBox(-0.65,-14731.35,9.36,8.30))" 
-class="svg-math" 
+class="svg-math" alt = "A"
 style="width:9.36pt;height:8.30pt;
 top:0.00pt;position:relative;">:
 <p><img src="#svgView(viewBox(28.61,-13416.60,184.35,85.30))" 
-class="svg-math" 
+class="svg-math" alt = "\begin{aligned}
+A_{1|i}&amp;=\sum_{j\wedge (1|i)=1|i}a_j \\
+&amp;= \sum_{(0|j)\wedge (1|i)=1|i}a^0_j + \sum_{(1|j)\wedge (1|i)=1|i}a^1_j \\
+&amp;= A_i^1
+\end{aligned}"
 style="width:184.35pt;height:85.30pt;
 top:0.00pt;position:relative;"></p> Together we have:
 <p><img src="#svgView(viewBox(28.61,-13291.38,93.88,16.33))" 
-class="svg-math" 
+class="svg-math" alt = "A=\left(A^0+A^1,A^1\right)"
 style="width:93.88pt;height:16.33pt;
 top:0.00pt;position:relative;"></p> with the trivial recursion boundary
 <img src="#svgView(viewBox(-0.65,-14222.37,40.47,10.10))" 
-class="svg-math" 
+class="svg-math" alt = "A_0=a_0"
 style="width:40.47pt;height:10.10pt;
 top:1.79pt;position:relative;"> when
 <img src="#svgView(viewBox(-0.03,-14203.22,29.10,7.84))" 
-class="svg-math" 
+class="svg-math" alt = "n=0"
 style="width:29.10pt;height:7.84pt;
 top:0.00pt;position:relative;">.</p>
 <p>This gives an efficient implementation very similar to
@@ -454,11 +481,14 @@ class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb4-1"><a href="#c
 <span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
 <p>The inverse transform is simple as well. Let
 <img src="#svgView(viewBox(-0.65,-13255.39,63.82,11.62))" 
-class="svg-math" 
+class="svg-math" alt = "A=(A', A'')"
 style="width:63.82pt;height:11.62pt;
 top:2.66pt;position:relative;">, then
 <p><img src="#svgView(viewBox(30.30,-13211.89,77.53,44.93))" 
-class="svg-math" 
+class="svg-math" alt = "\begin{cases}
+A^0=A'-A'' \\
+A^1=A''
+\end{cases}"
 style="width:77.53pt;height:44.93pt;
 top:0.00pt;position:relative;"></p> The code:</p>
 <div class="sourceCode" id="cb5"><pre
@@ -476,118 +506,139 @@ the functions above together.</p>
 <h1 id="bitwise-xor-convolution">Bitwise XOR convolution</h1>
 <p>The XOR operation does <strong>not</strong> have such nice property
 as <p><img src="#svgView(viewBox(28.28,-13127.37,208.15,13.63))" 
-class="svg-math" 
+class="svg-math" alt = "x\oplus z=z, y\oplus z=z\Leftrightarrow (x\oplus y)\oplus z=z"
 style="width:208.15pt;height:13.63pt;
 top:0.00pt;position:relative;"></p> So accelerating the convolution
 <p><img src="#svgView(viewBox(29.13,-13062.70,105.00,28.90))" 
-class="svg-math" 
+class="svg-math" alt = "\{a\circledast b\}_i = \sum_{j\oplus k=i}a_jb_k"
 style="width:105.00pt;height:28.90pt;
 top:0.00pt;position:relative;"></p> is not as straightforward as we did
 above.</p>
 <p>We first introduce an auxiliary operation, define
 <img src="#svgView(viewBox(-0.99,-13017.76,164.35,11.62))" 
-class="svg-math" 
+class="svg-math" alt = "x \otimes y= \operatorname{popcount}(x\wedge y) \bmod 2"
 style="width:164.35pt;height:11.62pt;
 top:2.66pt;position:relative;">, where
 <img src="#svgView(viewBox(-0.03,-12999.08,63.70,11.62))" 
-class="svg-math" 
+class="svg-math" alt = "\operatorname{popcount}(x)"
 style="width:63.70pt;height:11.62pt;
 top:2.66pt;position:relative;"> denotes the number of
 <img src="#svgView(viewBox(0.26,-14907.81,5.98,7.84))" 
-class="svg-math" 
+class="svg-math" alt = "1"
 style="width:5.98pt;height:7.84pt;
 top:0.00pt;position:relative;">s in the binary representation of
 <img src="#svgView(viewBox(-0.99,-12977.08,8.43,5.65))" 
-class="svg-math" 
+class="svg-math" alt = "x"
 style="width:8.43pt;height:5.65pt;
 top:0.00pt;position:relative;">.</p>
 <p><strong>Claim:</strong> The transformation below turns convolutions
 to element-wise multiplications:
 <p><img src="#svgView(viewBox(28.50,-12931.70,164.06,28.90))" 
-class="svg-math" 
+class="svg-math" alt = "\mathcal{FWHT}\{a\}_i=\sum_{j\otimes i=0} a_j - \sum_{j\otimes i=1} a_j"
 style="width:164.06pt;height:28.90pt;
 top:0.00pt;position:relative;"></p> <strong>Proof: </strong>
 <p><img src="#svgView(viewBox(28.50,-12870.58,366.23,105.48))" 
-class="svg-math" 
+class="svg-math" alt = "\begin{aligned}
+\mathcal{FWHT}\{a\}_i\cdot\mathcal{FWHT}\{b\}_i &amp;= \left(\sum_{j\otimes i=0} a_j - \sum_{j\otimes i=1} a_j\right) \left(\sum_{k\otimes i=0} b_k - \sum_{k\otimes i=1} b_k\right) \\
+&amp;= \sum_{j\otimes i=0}\sum_{k\otimes i=0}a_jb_k +\sum_{j\otimes i=1}\sum_{k\otimes i=1}a_jb_k \\
+&amp;- \sum_{j\otimes i=1}\sum_{k\otimes i=0}a_jb_k - \sum_{j\otimes i=0}\sum_{k\otimes i=1}a_jb_k
+\end{aligned}"
 style="width:366.23pt;height:105.48pt;
 top:0.00pt;position:relative;"></p> How to simplify those terms?</p>
 <p>Observe that by the definition of XOR we have
 <p><img src="#svgView(viewBox(29.23,-12725.37,350.28,13.63))" 
-class="svg-math" 
+class="svg-math" alt = "\operatorname{popcount}(x\oplus y) = \operatorname{popcount}(x)+\operatorname{popcount}(y)-2\operatorname{popcount}(x\wedge y)"
 style="width:350.28pt;height:13.63pt;
 top:0.00pt;position:relative;"></p> So if we apply modulo
 <img src="#svgView(viewBox(-0.46,-14963.85,7.11,7.84))" 
-class="svg-math" 
+class="svg-math" alt = "2"
 style="width:7.11pt;height:7.84pt;
 top:0.00pt;position:relative;"> on both sides,
 <p><img src="#svgView(viewBox(29.23,-12658.17,297.56,13.63))" 
-class="svg-math" 
+class="svg-math" alt = "\operatorname{popcount}(x\oplus y) \equiv \operatorname{popcount}(x)+\operatorname{popcount}(y) \pmod 2"
 style="width:297.56pt;height:13.63pt;
 top:0.00pt;position:relative;"></p> Plug in
 <img src="#svgView(viewBox(-0.99,-12622.84,97.85,10.29))" 
-class="svg-math" 
+class="svg-math" alt = "x=j\wedge i,y=k\wedge i"
 style="width:97.85pt;height:10.29pt;
 top:1.99pt;position:relative;"> and we get
 <p><img src="#svgView(viewBox(29.23,-12572.27,380.94,13.63))" 
-class="svg-math" 
+class="svg-math" alt = "\operatorname{popcount}((j\wedge i)\oplus (k\wedge i)) \equiv \operatorname{popcount}(j\wedge i)+\operatorname{popcount}(k\wedge i) \pmod 2"
 style="width:380.94pt;height:13.63pt;
 top:0.00pt;position:relative;"></p> We are almost there. Apply the
 identity below, whose proof I simply omit here,
 <p><img src="#svgView(viewBox(29.36,-12504.97,148.61,13.63))" 
-class="svg-math" 
+class="svg-math" alt = "(j\wedge i)\oplus (k\wedge i)=(j\oplus k)\wedge i"
 style="width:148.61pt;height:13.63pt;
 top:0.00pt;position:relative;"></p> (This is something good about
 bitwise operations: if you cannot prove an identity the smart way you
 can always fall back on the dumb method – making a truth table)</p>
 <p>We finally get
 <p><img src="#svgView(viewBox(29.36,-12437.77,186.46,13.63))" 
-class="svg-math" 
+class="svg-math" alt = "(j \oplus k)\otimes i \equiv j\otimes i+k\otimes i \pmod 2"
 style="width:186.46pt;height:13.63pt;
 top:0.00pt;position:relative;"></p> (We are actually quite familiar with
 this if we remove the circles outside
 <img src="#svgView(viewBox(-0.33,-14183.84,9.95,7.97))" 
-class="svg-math" 
+class="svg-math" alt = "+"
 style="width:9.95pt;height:7.97pt;
 top:0.83pt;position:relative;">s and
 <img src="#svgView(viewBox(0.76,-12401.25,7.77,7.97))" 
-class="svg-math" 
+class="svg-math" alt = "\times"
 style="width:7.77pt;height:7.97pt;
 top:0.83pt;position:relative;">s)</p>
 <p>With this conclusion we can simplify the four terms above:
 <p><img src="#svgView(viewBox(28.50,-12356.37,296.26,69.62))" 
-class="svg-math" 
+class="svg-math" alt = "\begin{aligned}
+\mathcal{FWHT}\{a\}_i\cdot\mathcal{FWHT}\{b\}_i &amp;= \cdots \\
+&amp;= \sum_{(j\oplus k)\otimes i=0}a_jb_k - \sum_{(j\oplus k)\otimes i=1}a_jb_k \\
+&amp;=  \mathcal{FWHT}\{a\circledast b\}_i
+\end{aligned}"
 style="width:296.26pt;height:69.62pt;
 top:0.00pt;position:relative;"></p> which completes the proof.</p>
 <p>We then explore how to compute
 <img src="#svgView(viewBox(-0.76,-15095.74,61.26,11.62))" 
-class="svg-math" 
+class="svg-math" alt = "\mathcal{FWHT}\{a\}"
 style="width:61.26pt;height:11.62pt;
 top:2.66pt;position:relative;"> efficiently. Divide and conquer is still
 our friend, and dividing
 <img src="#svgView(viewBox(0.06,-15933.89,6.70,5.65))" 
-class="svg-math" 
+class="svg-math" alt = "a"
 style="width:6.70pt;height:5.65pt;
 top:0.00pt;position:relative;"> based on the highest bit works here so
 we continue to use those notations.</p>
 <p>Consider the first half of
 <img src="#svgView(viewBox(-0.65,-14731.35,9.36,8.30))" 
-class="svg-math" 
+class="svg-math" alt = "A"
 style="width:9.36pt;height:8.30pt;
 top:0.00pt;position:relative;">…
 <p><img src="#svgView(viewBox(28.61,-12252.30,332.54,118.80))" 
-class="svg-math" 
+class="svg-math" alt = "\begin{aligned}
+A_{0|i} &amp;= \sum_{j\otimes (0|i)=0} a_j - \sum_{j\otimes (0|i)=1} a_j \\
+&amp;= \sum_{(0|j)\otimes (0|i)=0} a_j^0+  \sum_{(1|j)\otimes (0|i)=0}a_j^1 -  \sum_{(0|j)\otimes (0|i)=1} a_j^0-  \sum_{(1|j)\otimes (0|i)=1}a_j^1 \\
+&amp;= \sum_{j\otimes i=0} a_j^0+  \sum_{j\otimes i=0}a_j^1 -  \sum_{j\otimes i=1} a_j^0-  \sum_{j\otimes i=1}a_j^1 \\
+&amp;= A_i^0
++A_i^1\end{aligned}"
 style="width:332.54pt;height:118.80pt;
 top:0.00pt;position:relative;"></p> and the other half:
 <p><img src="#svgView(viewBox(28.61,-12099.40,332.54,118.80))" 
-class="svg-math" 
+class="svg-math" alt = "\begin{aligned}
+A_{1|i} &amp;= \sum_{j\otimes (1|i)=0} a_j - \sum_{j\otimes (1|i)=1} a_j \\
+&amp;= \sum_{(0|j)\otimes (1|i)=0} a_j^0+  \sum_{(1|j)\otimes (1|i)=0}a_j^1 -  \sum_{(0|j)\otimes (1|i)=1} a_j^0-  \sum_{(1|j)\otimes (1|i)=1}a_j^1 \\
+&amp;= \sum_{j\otimes i=0} a_j^0+  \sum_{j\otimes i=1}a_j^1 -  \sum_{j\otimes i=1} a_j^0-  \sum_{j\otimes i=0}a_j^1 \\
+&amp;= A_i^0 - A_i^1
+\end{aligned}"
 style="width:332.54pt;height:118.80pt;
 top:0.00pt;position:relative;"></p> So together we get
 <p><img src="#svgView(viewBox(28.61,-11940.78,121.50,16.33))" 
-class="svg-math" 
+class="svg-math" alt = "A=\left(A^0+A^1,A^0-A^1\right)"
 style="width:121.50pt;height:16.33pt;
 top:0.00pt;position:relative;"></p> and the inverse transform
 <p><img src="#svgView(viewBox(28.61,-11880.85,163.17,52.20))" 
-class="svg-math" 
+class="svg-math" alt = "A=(A',A'') \Rightarrow \begin{cases}
+\displaystyle A^0=\frac{A'+A''}{2} \\
+\displaystyle A^1=\frac{A'-A''}{2}
+\end{cases}"
 style="width:163.17pt;height:52.20pt;
 top:0.00pt;position:relative;"></p> The code for both transforms are a
 bit longer than those for OR and AND, but not by too much:</p>
@@ -639,32 +690,32 @@ Fast Walsh-Hadamard Transform</strong>.</p>
 <p>Note that though FFT and FWHT shares the same idea of divide and
 conquer, FWHT does not require
 <img src="#svgView(viewBox(-0.03,-15896.53,7.14,5.65))" 
-class="svg-math" 
+class="svg-math" alt = "n"
 style="width:7.14pt;height:5.65pt;
 top:0.00pt;position:relative;"> to be a power of
 <img src="#svgView(viewBox(-0.46,-14963.85,7.11,7.84))" 
-class="svg-math" 
+class="svg-math" alt = "2"
 style="width:7.11pt;height:7.84pt;
 top:0.00pt;position:relative;"> whereas FFT does. (Well actually neither
 of them “require”
 <img src="#svgView(viewBox(-0.03,-15896.53,7.14,5.65))" 
-class="svg-math" 
+class="svg-math" alt = "n"
 style="width:7.14pt;height:5.65pt;
 top:0.00pt;position:relative;"> to be a power of
 <img src="#svgView(viewBox(-0.46,-14963.85,7.11,7.84))" 
-class="svg-math" 
+class="svg-math" alt = "2"
 style="width:7.11pt;height:7.84pt;
 top:0.00pt;position:relative;">, but to apply FFT when
 <img src="#svgView(viewBox(-0.03,-15896.53,7.14,5.65))" 
-class="svg-math" 
+class="svg-math" alt = "n"
 style="width:7.14pt;height:5.65pt;
 top:0.00pt;position:relative;"> is not a power of
 <img src="#svgView(viewBox(-0.46,-14963.85,7.11,7.84))" 
-class="svg-math" 
+class="svg-math" alt = "2"
 style="width:7.11pt;height:7.84pt;
 top:0.00pt;position:relative;"> you either need to pad with
 <img src="#svgView(viewBox(-0.38,-14889.13,7.02,7.84))" 
-class="svg-math" 
+class="svg-math" alt = "0"
 style="width:7.02pt;height:7.84pt;
 top:0.00pt;position:relative;">s or you have to make your implementation
 really complicated).</p>
@@ -674,33 +725,33 @@ matrices and vectors, the matrix is called a Hadamard Matrix.</p>
 inverse FWHT can be reversed.</p>
 <p>For instance, when
 <img src="#svgView(viewBox(-0.03,-11813.66,29.17,7.84))" 
-class="svg-math" 
+class="svg-math" alt = "n=8"
 style="width:29.17pt;height:7.84pt;
 top:0.00pt;position:relative;">, after fully dividing the sequence into
 individual elements, we first merge
 <img src="#svgView(viewBox(0.10,-11796.11,127.40,11.62))" 
-class="svg-math" 
+class="svg-math" alt = "(0,1),(2,3),(4,5),(6,7)"
 style="width:127.40pt;height:11.62pt;
 top:2.66pt;position:relative;">, then we merge
 <img src="#svgView(viewBox(0.10,-11777.43,107.88,11.62))" 
-class="svg-math" 
+class="svg-math" alt = "(0,1,2,3),(4,5,6,7)"
 style="width:107.88pt;height:11.62pt;
 top:2.66pt;position:relative;"> and finally
 <img src="#svgView(viewBox(0.10,-11758.75,98.11,11.62))" 
-class="svg-math" 
+class="svg-math" alt = "(0,1,2,3,4,5,6,7)"
 style="width:98.11pt;height:11.62pt;
 top:2.66pt;position:relative;">. Naturally when we do the inverse
 transform we have to start with
 <img src="#svgView(viewBox(0.10,-11758.75,98.11,11.62))" 
-class="svg-math" 
+class="svg-math" alt = "(0,1,2,3,4,5,6,7)"
 style="width:98.11pt;height:11.62pt;
 top:2.66pt;position:relative;">, recover
 <img src="#svgView(viewBox(0.10,-11777.43,107.88,11.62))" 
-class="svg-math" 
+class="svg-math" alt = "(0,1,2,3),(4,5,6,7)"
 style="width:107.88pt;height:11.62pt;
 top:2.66pt;position:relative;">, then recover
 <img src="#svgView(viewBox(0.10,-11796.11,127.40,11.62))" 
-class="svg-math" 
+class="svg-math" alt = "(0,1),(2,3),(4,5),(6,7)"
 style="width:127.40pt;height:11.62pt;
 top:2.66pt;position:relative;"> and then recover the individual
 elements. But the popular implementation seems to suggest that the

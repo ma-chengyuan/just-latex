@@ -63,6 +63,7 @@ impl Config {
             .set_default("dvisvgm", "dvisvgm")?
             .set_default("y_range_tol", 1.0)?
             .set_default("x_range_margin", 1.0)?
+            .set_default("y_range_margin", 1.0)?
             .set_default("baseline_rise", 0.0)?
             .set_default("lzma_script", 
             r#"<script src="https://cdn.jsdelivr.net/npm/lzma@2.3.2/src/lzma-d-min.js"></script>"#)?

@@ -22,6 +22,7 @@ xz2 = "0.1"
 base64 = "0.13"
 bytesize = "1.0"
 config = "0.13"
+html-escape = "0.2"
 libz-sys = {version = "1.1.8", features = ["static"]}
 
 [build-dependencies]

@@ -257,8 +257,13 @@ impl<'a> FragmentRenderer<'a> {
             .unwrap_or(x_range);
 
             if let FragmentType::DisplayMath | FragmentType::RawBlock = item.ty {
-                y_range =
-                    refine_y_range(&bboxes, y_range.0, y_range.1, self.config.y_range_tol, 1.0);
+                y_range = refine_y_range(
+                    &bboxes,
+                    y_range.0,
+                    y_range.1,
+                    self.config.y_range_tol,
+                    self.config.y_range_margin,
+                );
             }
 
             let depth = match item.ty {
@@ -267,15 +272,16 @@ impl<'a> FragmentRenderer<'a> {
                 FragmentType::DontShow => unreachable!(),
             };
             let svg_elem = formatdoc!(
-                r##"<img src="#svgView(viewBox({:.2},{:.2},{width:.2},{height:.2}))" 
-                         class="svg-math" 
+                r##"<img src="#svgView(viewBox({x:.2},{y:.2},{width:.2},{height:.2}))" 
+                         class="svg-math" alt = "{alt}"
                          style="width:{width:.2}pt;height:{height:.2}pt;
                          top:{depth:.2}pt;position:relative;">"##,
-                x_range.0,
-                y_range.0,
+                x = x_range.0,
+                y = y_range.0,
                 width = x_range.1 - x_range.0,
                 height = y_range.1 - y_range.0,
                 depth = depth - self.config.baseline_rise,
+                alt = html_escape::encode_text(&item.src),
             );
             let svg_elem = match item.ty {
                 FragmentType::InlineMath => svg_elem,
