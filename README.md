@@ -112,9 +112,11 @@ Everything in `$$`s is treated as math by Pandoc and just-latex will normally su
     ````
   You don't have to type `%raw` here.
 
-Note that if you write complicated non-math content inside a `$$` block, then sometimes `pandoc` will try to be clever and recognize your code as a raw TeX block directly, but the surrounding `$$`s will become ordinary visible text. Thus if you really write non-math stuffs the second format is recommended (plus it does not upset editors that attempt to render your Markdown with MathJaX all the time, such as Typora).
+Note that if you write complicated non-math content inside a `$$` block (*update: that seems to be blocks with blank lines*), then sometimes `pandoc` will try to be clever and recognize your code as a raw TeX block directly, but the surrounding `$$`s will become ordinary visible text. Thus if you really write non-math stuffs the second format is recommended (plus it does not upset editors that attempt to render your Markdown with MathJaX all the time, such as Typora).
 
 Or, sometimes you may want a block that is solely dedicated to definition of macros or altering internal TeX variables. This is a problem because when just-latex asks SyncTeX where these code end up in the PDF it becomes confused -- such code do not produce any content on their own! Frustrated, SyncTeX returns the bounding box for the next fragment, which is wrong. In this case you must start such block with `%dontshow`, either in a `$$` block or a `{=tex}` block. This informs just-latex to only include it in the intermediate TeX file and not to call SyncTeX. You can see this in the demo file.
+
+Also note that you can no longer use `\TeX` and `\LaTeX`. This is *not* a bug because the two commands just can't be used in math mode in actual LaTeX -- it is MathJaX which spoiled us. You should use `\text{\TeX}` instead.
 
 ## Limitations 
 

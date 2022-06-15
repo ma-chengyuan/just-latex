@@ -9,7 +9,7 @@ use std::{
     process::Command,
     str::FromStr,
     time::Instant,
-    vec,
+    vec, collections::hash_map::DefaultHasher, hash::{Hash, Hasher},
 };
 use tempfile::TempDir;
 use usvg::{NodeExt, PathBbox};
@@ -140,6 +140,8 @@ impl<'a> FragmentRenderer<'a> {
         let final_node = self.walk_and_create_final_node(tree)?;
 
         if self.fragments.is_empty() {
+            // Make the final node a dummy.
+            *final_node = json!({"t": "RawBlock", "c": ["html", ""]});
             return Ok(());
         }
 
@@ -154,6 +156,18 @@ impl<'a> FragmentRenderer<'a> {
         let working_path = working_dir.path().canonicalize()?;
         // let working_path = std::path::Path::new("./output").canonicalize()?;
         let source_path = working_path.join("source.tex");
+
+        // A unique class name for each document is important because HTMLs from multiple posts
+        // may be put together in the home page of a blog. Then the decompressing code of each page
+        // starts a race, each trying to modify every fragment image.
+        let svg_class_name = {
+            let mut source_hasher = DefaultHasher::new();
+            source_str.hash(&mut source_hasher);
+            let hash = source_hasher.finish();
+            format!("jl-{}", base64::encode(hash.to_be_bytes()))
+        };
+
+        // eprintln!("{}", source_str);
         {
             let mut source = File::create(&source_path)?;
             source.write_all(source_str.as_bytes())?;
@@ -273,11 +287,12 @@ impl<'a> FragmentRenderer<'a> {
             };
             let svg_elem = formatdoc!(
                 r##"<img src="#svgView(viewBox({x:.2},{y:.2},{width:.2},{height:.2}))" 
-                         class="svg-math" alt = "{alt}"
+                         class="{class_name}" alt = "{alt}"
                          style="width:{width:.2}pt;height:{height:.2}pt;
-                         top:{depth:.2}pt;position:relative;">"##,
+                         top:{depth:.2}pt;position:relative;display:inline;margin-bottom:0pt;">"##,
                 x = x_range.0,
                 y = y_range.0,
+                class_name = svg_class_name,
                 width = x_range.1 - x_range.0,
                 height = y_range.1 - y_range.0,
                 depth = depth - self.config.baseline_rise,
@@ -286,7 +301,7 @@ impl<'a> FragmentRenderer<'a> {
             let svg_elem = match item.ty {
                 FragmentType::InlineMath => svg_elem,
                 FragmentType::DisplayMath | FragmentType::RawBlock => {
-                    format!("<p>{}</p>", svg_elem)
+                    format!(r#"<p style="text-align:center;">{}</p>"#, svg_elem)
                 }
                 FragmentType::DontShow => unreachable!(),
             };
@@ -325,7 +340,7 @@ impl<'a> FragmentRenderer<'a> {
                 LZMA.decompress(Uint8Array.from(atob("{}"), function(c) {{ return c.charCodeAt(0); }}), 
                     function(result, error) {{
                         var svgUrl = URL.createObjectURL(new Blob([result], {{type: "image/svg+xml"}}));
-                        var imgs = document.getElementsByClassName("svg-math");
+                        var imgs = document.getElementsByClassName("{}");
                         console.log(imgs.length);
                         for (var i = 0; i < imgs.length; i++) {{
                             var hashPos = imgs[i].src.indexOf("#");
@@ -338,7 +353,8 @@ impl<'a> FragmentRenderer<'a> {
             </script>
             "##,
             self.config.lzma_script,
-            svg_encoded
+            svg_encoded,
+            svg_class_name
         );
         *final_node = json!({
             "t": "RawBlock",
@@ -399,6 +415,44 @@ impl<'a> FragmentRenderer<'a> {
                 }
                 Ok(())
             }
+            "Table" => {
+                for (i, content) in value["c"]
+                    .as_array_mut()
+                    .context("reading contents of Table")?
+                    .iter_mut()
+                    .enumerate()
+                // Circumvent the borrow checker ... isn't it nasty?
+                {
+                    match i {
+                        1 => {
+                            self.walk_blocks(&mut content[1], "Table.Caption")?;
+                        }
+                        3 => {
+                            self.walk_rows(&mut content[1], "Table.TableHead")?;
+                        }
+                        4 => {
+                            for table_body in content
+                                .as_array_mut()
+                                .context("reading Table.[TableBody]")?
+                            {
+                                for rows in table_body
+                                    .as_array_mut()
+                                    .context("reading content of Table.[TableBody]")?
+                                    .iter_mut()
+                                    .skip(2)
+                                {
+                                    self.walk_rows(rows, "Table.[TableBody].[Row]")?;
+                                }
+                            }
+                        }
+                        5 => {
+                            self.walk_rows(&mut content[1], "Table.TableFoot")?;
+                        }
+                        _ => {}
+                    }
+                }
+                Ok(())
+            }
             _ => Ok(()),
         }
     }
@@ -440,7 +494,7 @@ impl<'a> FragmentRenderer<'a> {
     fn walk_blocks(&mut self, value: &'a mut Value, parent: &str) -> Result<()> {
         for block in value
             .as_array_mut()
-            .with_context(|| format!("reading [Block] of {}", parent))?
+            .with_context(|| format!("reading {}.[Block]", parent))?
             .iter_mut()
         {
             self.walk_block(block)?;
@@ -451,7 +505,7 @@ impl<'a> FragmentRenderer<'a> {
     fn walk_list_of_blocks(&mut self, value: &'a mut Value, parent: &str) -> Result<()> {
         for blocks in value
             .as_array_mut()
-            .with_context(|| format!("reading [[Block]] of {}", parent))?
+            .with_context(|| format!("reading {}.[[Block]]", parent))?
             .iter_mut()
         {
             self.walk_blocks(blocks, parent)?;
@@ -462,7 +516,7 @@ impl<'a> FragmentRenderer<'a> {
     fn walk_inlines(&mut self, value: &'a mut Value, parent: &str) -> Result<()> {
         for inline in value
             .as_array_mut()
-            .with_context(|| format!("reading [Inline] of {}", parent))?
+            .with_context(|| format!("reading {}.[Inline]", parent))?
             .iter_mut()
         {
             self.walk_inline(inline)?;
@@ -473,10 +527,25 @@ impl<'a> FragmentRenderer<'a> {
     fn walk_list_of_inlines(&mut self, value: &'a mut Value, parent: &str) -> Result<()> {
         for inlines in value
             .as_array_mut()
-            .with_context(|| format!("reading [[Inline]] of {}", parent))?
+            .with_context(|| format!("reading {}.[[Inline]]", parent))?
             .iter_mut()
         {
             self.walk_inlines(inlines, parent)?;
+        }
+        Ok(())
+    }
+
+    fn walk_rows(&mut self, value: &'a mut Value, parent: &str) -> Result<()> {
+        for row in value
+            .as_array_mut()
+            .with_context(|| format!("reading {}.[Row]", parent))?
+        {
+            for cell in row[1]
+                .as_array_mut()
+                .with_context(|| format!("reading {}.[Row].[Cell]", parent))?
+            {
+                self.walk_blocks(&mut cell[4], "[Cell] of Row of TableHead of Table")?;
+            }
         }
         Ok(())
     }
