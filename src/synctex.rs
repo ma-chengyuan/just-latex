@@ -3,7 +3,9 @@
 #![allow(non_snake_case)]
 #![allow(dead_code)]
 
-use std::{ffi::CString, os::raw::c_int, path::Path};
+use std::{ffi::CString, os::raw::c_int, path::Path, hash::Hash};
+
+use ordered_float::OrderedFloat;
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
@@ -19,8 +21,8 @@ impl Scanner {
     }
 
     pub fn query(&self, line: usize) -> Vec<TeXBox> {
-        fn f(x: i32) -> f64 {
-            x as f64 / 65536.0
+        fn texpt_to_f64(x: i32) -> OrderedFloat<f64> {
+            (x as f64 / 65536.0).into()
         }
 
         unsafe {
@@ -30,34 +32,15 @@ impl Scanner {
             if result > 0 {
                 let mut node = synctex_scanner_next_result(self.0);
                 while !node.is_null() {
-                    let h = f(synctex_node_box_h(node));
-                    let v = f(synctex_node_box_v(node));
-                    let height = f(synctex_node_box_height(node));
-                    let width = f(synctex_node_box_width(node));
-                    let depth = f(synctex_node_box_depth(node));
-                    /* 
-                    There seems to be some precision issues with these functions???
-                    let h = synctex_node_visible_h(node) as f64;
-                    let v = synctex_node_visible_v(node) as f64;
-                    let height = synctex_node_visible_height(node) as f64;
-                    let width = synctex_node_visible_width(node) as f64;
-                    let depth = synctex_node_visible_depth(node) as f64;
-                    */
-
-                    ret.push(TeXBox { h, v, height, width, depth });
-
-                    /*
-                    eprintln!("h: {}", f(synctex_node_box_h(node)));
-                    eprintln!("v: {}", f(synctex_node_box_v(node)));
-                    eprintln!("height: {}", f(synctex_node_box_height(node)));
-                    eprintln!("width: {}", f(synctex_node_box_width(node)));
-                    eprintln!("depth: {}", f(synctex_node_box_depth(node)));
-                    eprintln!("visible h: {}", synctex_node_box_visible_h(node));
-                    eprintln!("visible v: {}", synctex_node_box_visible_v(node));
-                    eprintln!("visible width: {}", synctex_node_box_visible_width(node));
-                    eprintln!("visible depth: {}", synctex_node_box_visible_depth(node));
-                    eprintln!("visible height: {}", synctex_node_box_visible_height(node));
-                    */
+                    ret.push(TeXBox {
+                        h: texpt_to_f64(synctex_node_box_h(node)),
+                        v: texpt_to_f64(synctex_node_box_v(node)),
+                        height: texpt_to_f64(synctex_node_box_height(node)),
+                        width: texpt_to_f64(synctex_node_box_width(node)),
+                        depth: texpt_to_f64(synctex_node_box_depth(node)),
+                        page: synctex_node_page(node) as u32,
+                        // ty: String::from(CStr::from_ptr(synctex_node_isa(node)).to_str().unwrap())
+                    });
                     node = synctex_scanner_next_result(self.0);
                 }
             }
@@ -80,11 +63,13 @@ impl Drop for Scanner {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct TeXBox {
-    pub h: f64,
-    pub v: f64,
-    pub height: f64, 
-    pub width: f64,
-    pub depth: f64
+    pub h: OrderedFloat<f64>,
+    pub v: OrderedFloat<f64>,
+    pub height: OrderedFloat<f64>,
+    pub width: OrderedFloat<f64>,
+    pub depth: OrderedFloat<f64>,
+    pub page: u32,
+    // pub ty: String,
 }

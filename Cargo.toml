@@ -23,6 +23,8 @@ base64 = "0.13"
 bytesize = "1.0"
 config = "0.13"
 html-escape = "0.2"
+quick-xml = "0.23"
+ordered-float = "3"
 libz-sys = {version = "1.1.8", features = ["static"]}
 
 [build-dependencies]

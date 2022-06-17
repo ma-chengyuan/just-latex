@@ -116,15 +116,20 @@ Note that if you write complicated non-math content inside a `$$` block (*update
 
 Or, sometimes you may want a block that is solely dedicated to definition of macros or altering internal TeX variables. This is a problem because when just-latex asks SyncTeX where these code end up in the PDF it becomes confused -- such code do not produce any content on their own! Frustrated, SyncTeX returns the bounding box for the next fragment, which is wrong. In this case you must start such block with `%dontshow`, either in a `$$` block or a `{=tex}` block. This informs just-latex to only include it in the intermediate TeX file and not to call SyncTeX. You can see this in the demo file.
 
-Also note that you can no longer use `\TeX` and `\LaTeX`. This is *not* a bug because the two commands just can't be used in math mode in actual LaTeX -- it is MathJaX which spoiled us. You should use `\text{\TeX}` instead.
+Also note that you can no longer use `\TeX` and `\LaTeX`. This is *not* a bug because the two commands just can't be used in math mode in actual LaTeX -- *it is MathJaX which spoils us*. You should use `\text{\TeX}`, or something like. 
+```tex
+\let\oTeX=\TeX
+\def\TeX{\text{\oTeX}}
+```
+Similarly, you can't use environments like `align` in math mode (you must use `aligned`).
+
+Since 0.1.2 multi-page intermediate PDFs are supported. But **it is still recommended to fit everything into one page** because SyncTeX across pages may produce unexpected results (due to how TeX's page breaker works). Just-latex now uses some heuristics to cope with this. In any case, **make sure the page is not decorated by page numbers/headers/footers** -- you can do it by adding `\pagestyle{empty}` to your preamble (I mean, why would you add page numbers in the first place? No one reads intermediate PDFs.) Also, **inline latex fragments cannot span pages**. Multiple page means multiple SVGs generated, making compression less efficient and the resulting HTML bigger (though with web workers decompressions can be parallized). You can use `\usepackage[paperheight=16000pt]{geometry}` to create a very long page that would suffice for most cases.
 
 ## Limitations 
 
-* Dvisvgm converts texts in PDF to SVG paths, so texts in rendered fragments are not selectable or copyable. Also this makes the resulting SVG files huge. With compression this program adds less than 100 KB to the generated HTML for a typical Markdown document (such as a blog post).
+* Dvisvgm converts texts in PDF to SVG paths, so texts in rendered fragments are not selectable or copyable. Also this makes the resulting SVG files huge. With compression this program adds less than 100 KB to the generated HTML for a typical Markdown document (such as a blog post). (**This problem is being worked on**)
 
 * TeX is slow, so is dvisvgm. Although the program itself runs quite fast converting a document still takes around 1 sec.
-
-* Right now it assumes dvisvgm only gives one SVG, that is, all LaTeX fragments together should fit in one page as specified by the preamble. A page in TeX can be as long as 16384 pt so this is not really a big issue unless your article is really, really long.
 
 * It is your reponsibility to set up the preamble in a way that the font size of the LaTeX fragments matches that of the surrounding text in HTML. For example, the default text size of HTML is 12pt, so you should pass `[12pt]` as an option to the `\documentclass{article}`. Also, note that for now the program does not do any special handling to inline maths in headings. This is a known issue and I plan to fix that later. 
 

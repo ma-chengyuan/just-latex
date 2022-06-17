@@ -12,7 +12,7 @@ pub struct Config {
     pub latex: String,
     /// Path to the dvisvgm executable.
     pub dvisvgm: String,
-    /// Defines the error tolerance for [`crate::x_range_for_y_range`] and 
+    /// Defines the error tolerance for [`crate::x_range_for_y_range`] and
     /// [`crate::refine_y_range`].
     pub y_range_tol: f64,
     /// A blank horizontal margin to rendered inline fragments. The unit is pt.
@@ -30,9 +30,11 @@ pub struct Config {
     ///
     /// But really it can also include anything you want to insert along at the end of the HTML.
     pub lzma_script: String,
-
     /// Configuration related to templating of fragments.
     pub template: TemplateConfig,
+    /// Output folder for intermediate files. Useful in case of LaTeX compilation errors.
+    /// If none, the program dumps everything in a temp folder.
+    pub output_folder: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -51,22 +53,23 @@ impl Config {
             .set_default(
                 "preamble",
                 indoc! {r"
-                \documentclass[12pt, fleqn]{article}
-                \usepackage[top=0cm, bottom=0cm, left=0cm, right=0cm, paperheight=16000pt]{geometry}
-                \usepackage{amsmath, amssymb, amsthm, bm}
-                \setlength{\parindent}{0pt}
-                \begin{document}"
+                    \documentclass[12pt, fleqn]{article}
+                    \usepackage[top=0cm, bottom=0cm, left=0cm, right=0cm, paperheight=16000pt]{geometry}
+                    \usepackage{amsmath, amssymb, amsthm, bm}
+                    \setlength{\parindent}{0pt}
+                    \begin{document}"
                 },
             )?
             .set_default("postamble", r"\end{document}")?
             .set_default("latex", "pdflatex")?
             .set_default("dvisvgm", "dvisvgm")?
-            .set_default("y_range_tol", 1.0)?
+            .set_default("y_range_tol", 0.0)?
             .set_default("x_range_margin", 1.0)?
             .set_default("y_range_margin", 1.0)?
             .set_default("baseline_rise", 0.0)?
             .set_default("lzma_script", 
             r#"<script src="https://cdn.jsdelivr.net/npm/lzma@2.3.2/src/lzma-d-min.js"></script>"#)?
+            .set_default("output_folder", Option::<String>::None)?
             // Default templates...
             .set_default("template.placeholder", "{{fragment}}")?
             .set_default("template.inline_math", r"\({{fragment}}\)")?

@@ -3,13 +3,16 @@ use bytesize::ByteSize;
 use indoc::formatdoc;
 use serde_json::{json, Value};
 use std::{
-    fs::File,
+    collections::{hash_map::DefaultHasher, BTreeMap, HashSet},
+    fs::{self, File},
+    hash::{Hash, Hasher},
     io::{stdin, stdout, Cursor, Read, Write},
     ops::Range,
+    path::Path,
     process::Command,
     str::FromStr,
     time::Instant,
-    vec, collections::hash_map::DefaultHasher, hash::{Hash, Hasher},
+    vec,
 };
 use tempfile::TempDir;
 use usvg::{NodeExt, PathBbox};
@@ -152,20 +155,16 @@ impl<'a> FragmentRenderer<'a> {
         const TEX2SVG_SCALING: f64 = 72.0 / 72.27;
 
         let (source_str, lines) = self.generate_latex_with_line_mappings();
-        let working_dir = TempDir::new()?;
-        let working_path = working_dir.path().canonicalize()?;
-        // let working_path = std::path::Path::new("./output").canonicalize()?;
-        let source_path = working_path.join("source.tex");
-
-        // A unique class name for each document is important because HTMLs from multiple posts
-        // may be put together in the home page of a blog. Then the decompressing code of each page
-        // starts a race, each trying to modify every fragment image.
-        let svg_class_name = {
-            let mut source_hasher = DefaultHasher::new();
-            source_str.hash(&mut source_hasher);
-            let hash = source_hasher.finish();
-            format!("jl-{}", base64::encode(hash.to_be_bytes()))
+        let working_dir = match self.config.output_folder {
+            Some(_) => None,
+            None => Some(TempDir::new()?),
         };
+        let working_path = match working_dir {
+            Some(working_dir) => working_dir.path().to_path_buf(),
+            None => Path::new(&self.config.output_folder.unwrap()).to_path_buf(),
+        }
+        .canonicalize()?;
+        let source_path = working_path.join("source.tex");
 
         // eprintln!("{}", source_str);
         {
@@ -193,23 +192,40 @@ impl<'a> FragmentRenderer<'a> {
         // This requires a page to be REALLY long/high. TeX can handle at most 65536pt -- I assume
         // this is enough as long as we are not writing a book.
         let dvisvgm_command = Command::new(self.config.dvisvgm)
-            .args(["-s", "-R", "-P", pdf_path.to_str().unwrap()])
+            .args(["-s", "-R", "-P", "-p1-", pdf_path.to_str().unwrap()])
             .current_dir(&working_path)
             .output()?;
         if !dvisvgm_command.status.success() {
             bail!("fail to run dvisvgm");
         }
         let options = usvg::Options::default();
+        // Split svgs because we might have multiple pages.
+        let svg_data = split_svgs(&dvisvgm_command.stdout)?;
+        let svgs = svg_data
+            .iter()
+            .map(|&svg| usvg::Tree::from_data(svg, &options.to_ref()))
+            .collect::<Result<Vec<_>, _>>()?;
+        // A unique class name for each svg is important because HTMLs from multiple posts
+        // may be put together in the home page of a blog. Then the decompressing code of each page
+        // starts a race, each trying to modify every fragment image.
+        let svg_class_names = svg_data
+            .iter()
+            .map(|svg| {
+                let mut hasher = DefaultHasher::new();
+                svg.hash(&mut hasher);
+                let hash = hasher.finish();
+                format!("jl-{}", base64::encode(hash.to_be_bytes()))
+            })
+            .collect::<Vec<_>>();
 
-        let svg = usvg::Tree::from_data(&dvisvgm_command.stdout, &options.to_ref())?;
-        let svg_data = dvisvgm_command.stdout;
-        let mut bboxes = vec![];
-        // Compute bounding boxes of leaf SVG elements. This will be useful later.
-        svg_to_bboxes(svg.root(), &mut bboxes);
-
-        let viewbox_top = svg.svg_node().view_box.rect.top();
+        let bboxes = svgs
+            .iter()
+            .map(|svg| svg_to_bboxes(svg.root()))
+            .collect::<Vec<_>>();
 
         let scanner = Scanner::new(pdf_path, &working_path);
+        let mut seen_boxes = HashSet::new();
+
         for (item, line_range) in self.fragments.iter_mut().zip(lines) {
             if let FragmentType::DontShow = item.ty {
                 // Skip dont shows.
@@ -225,118 +241,167 @@ impl<'a> FragmentRenderer<'a> {
                 }
                 continue;
             }
-            // eprintln!("{:#?} {}", item.ty, item.src);
-            let mut y_range = (f64::MAX, f64::MIN);
-            let mut x_range = (f64::MAX, f64::MIN);
-            // We need to know the baseline in order to align the svgs to the baseline of the
-            // surrounding text.
-            let mut baseline = (0.0, 0.0);
+
+            #[derive(Clone, Debug)]
+            struct Region {
+                x_range: (f64, f64),
+                y_range: (f64, f64),
+                baseline: f64,
+                baseline_width: f64,
+            }
+
+            let mut regions: BTreeMap<u32, Region> = BTreeMap::new();
+
             for line in line_range {
                 for tb in scanner.query(line) {
-                    if tb.width > baseline.1 {
-                        baseline = (
-                            tb.v * TEX2SVG_SCALING + viewbox_top,
-                            tb.width * TEX2SVG_SCALING,
-                        );
+                    let area = tb.width * (tb.height + tb.depth);
+                    if area.into_inner() <= 1e-6 {
+                        // Skip zero-area boxes. They may be generated by the TeX page breaker and
+                        // do not actually correspond to anything in our source file. Also they
+                        // wouldn't contribute to updating the region of the page anyways.
+                        continue;
                     }
-                    y_range = (
-                        y_range
-                            .0
-                            .min((tb.v - tb.height) * TEX2SVG_SCALING + viewbox_top),
-                        y_range
-                            .1
-                            .max((tb.v + tb.depth) * TEX2SVG_SCALING + viewbox_top),
+                    if seen_boxes.contains(&tb) {
+                        // Continue if we have seen this box -- then probably that's SyncTeX's
+                        // fault
+                        continue;
+                    }
+                    seen_boxes.insert(tb.clone());
+
+                    let (x_low, x_high) = (tb.h.into_inner(), (tb.h + tb.width).into_inner());
+                    let (y_low, y_high) = (
+                        (tb.v - tb.height).into_inner(),
+                        (tb.v + tb.depth).into_inner(),
                     );
-                    x_range = (
-                        x_range.0.min(tb.h * TEX2SVG_SCALING),
-                        x_range.1.min(tb.h + tb.width * TEX2SVG_SCALING),
-                    )
+                    regions
+                        .entry(tb.page)
+                        .and_modify(|r| {
+                            r.x_range = (r.x_range.0.min(x_low), r.x_range.1.max(x_high));
+                            r.y_range = (r.y_range.0.min(y_low), r.y_range.1.max(y_high));
+                            if tb.width.into_inner() > r.baseline_width {
+                                r.baseline_width = tb.width.into_inner();
+                                r.baseline = tb.v.into_inner();
+                            }
+                        })
+                        .or_insert_with(|| Region {
+                            x_range: (x_low, x_high),
+                            y_range: (y_low, y_high),
+                            baseline: tb.v.into(),
+                            baseline_width: tb.width.into(),
+                        });
                 }
             }
-            if y_range == (f64::MAX, f64::MIN) {
-                // which means we haven't encounter a single box...
-                bail!("no box found for equation {}", item.src);
-            }
-            // eprintln!("{:#?}", y_range);
-            // The x bound given by synctex is not always accurate. Most of the time adding an
-            // \hfill will create a box that horizontally span the entire page. However we only care
-            // about visible parts. Here we look into the svg for more precise x bounds.
-            let x_range = x_range_for_y_range(
-                &bboxes,
-                y_range.0,
-                y_range.1,
-                self.config.y_range_tol,
-                self.config.x_range_margin,
-            )
-            .unwrap_or(x_range);
 
-            if let FragmentType::DisplayMath | FragmentType::RawBlock = item.ty {
-                y_range = refine_y_range(
-                    &bboxes,
-                    y_range.0,
-                    y_range.1,
-                    self.config.y_range_tol,
-                    self.config.y_range_margin,
+            if regions.is_empty() {
+                bail!("no boxes for {}", item.src);
+            }
+            if matches!(item.ty, FragmentType::InlineMath) && regions.len() > 1 {
+                bail!(
+                    "inline fragments '{}' spans multiple pages {:?} (did you disable page numbering?)",
+                    item.src,
+                    regions.keys().collect::<Vec<_>>()
                 );
             }
 
-            let depth = match item.ty {
-                FragmentType::InlineMath => y_range.1 - baseline.0,
-                FragmentType::DisplayMath | FragmentType::RawBlock => 0.0,
-                FragmentType::DontShow => unreachable!(),
-            };
-            let svg_elem = formatdoc!(
-                r##"<img src="#svgView(viewBox({x:.2},{y:.2},{width:.2},{height:.2}))" 
+            let mut imgs = vec![];
+            for (
+                page,
+                Region {
+                    mut x_range,
+                    mut y_range,
+                    mut baseline,
+                    ..
+                },
+            ) in regions.into_iter()
+            {
+                let svg_idx = page as usize - 1;
+                let y_base = svgs[svg_idx].svg_node().view_box.rect.top();
+                // Convert everything from TeX coordinates to SVG coordinates.
+                y_range = (
+                    y_range.0 * TEX2SVG_SCALING + y_base,
+                    y_range.1 * TEX2SVG_SCALING + y_base,
+                );
+                x_range = x_range_for_y_range(
+                    &bboxes[svg_idx],
+                    y_range.0,
+                    y_range.1,
+                    self.config.y_range_tol,
+                    self.config.x_range_margin,
+                )
+                .unwrap_or((x_range.0 * TEX2SVG_SCALING, x_range.1 * TEX2SVG_SCALING));
+                baseline = baseline * TEX2SVG_SCALING + y_base;
+
+                if let FragmentType::DisplayMath | FragmentType::RawBlock = item.ty {
+                    y_range = refine_y_range(
+                        &bboxes[svg_idx],
+                        y_range.0,
+                        y_range.1,
+                        self.config.y_range_tol,
+                        self.config.y_range_margin,
+                    );
+                }
+
+                let depth = match item.ty {
+                    FragmentType::InlineMath => y_range.1 - baseline,
+                    FragmentType::DisplayMath | FragmentType::RawBlock => 0.0,
+                    FragmentType::DontShow => unreachable!(),
+                };
+                imgs.push(formatdoc!(
+                    r##"<img src="#svgView(viewBox({x:.2},{y:.2},{width:.2},{height:.2}))"
                          class="{class_name}" alt = "{alt}"
                          style="width:{width:.2}pt;height:{height:.2}pt;
                          top:{depth:.2}pt;position:relative;display:inline;margin-bottom:0pt;">"##,
-                x = x_range.0,
-                y = y_range.0,
-                class_name = svg_class_name,
-                width = x_range.1 - x_range.0,
-                height = y_range.1 - y_range.0,
-                depth = depth - self.config.baseline_rise,
-                alt = html_escape::encode_text(&item.src),
-            );
-            let svg_elem = match item.ty {
-                FragmentType::InlineMath => svg_elem,
+                    x = x_range.0,
+                    y = y_range.0,
+                    class_name = svg_class_names[svg_idx],
+                    width = x_range.1 - x_range.0,
+                    height = y_range.1 - y_range.0,
+                    depth = depth - self.config.baseline_rise,
+                    alt = html_escape::encode_text(&item.src),
+                ));
+            }
+            let html = match item.ty {
+                FragmentType::InlineMath => imgs.join(""),
                 FragmentType::DisplayMath | FragmentType::RawBlock => {
-                    format!(r#"<p style="text-align:center;">{}</p>"#, svg_elem)
+                    format!(r#"<p style="text-align:center;">{}</p>"#, imgs.join("<br>"))
                 }
                 FragmentType::DontShow => unreachable!(),
             };
             for node in item.refs.iter_mut() {
                 match node {
                     FragmentNodeRef::Inline(node) => {
-                        **node = json!({"t": "RawInline", "c": ["html", &svg_elem]});
+                        **node = json!({"t": "RawInline", "c": ["html", &html]});
                     }
                     FragmentNodeRef::Block(node) => {
-                        **node = json!({"t": "RawBlock", "c": ["html", &svg_elem]});
+                        **node = json!({"t": "RawBlock", "c": ["html", &html]});
                     }
                 }
             }
         }
-        let start = Instant::now();
-        let original_size = svg_data.len();
+
+        /*
+        {
+            debug_svg.push_str("</svg>");
+            let svg_str = String::from_utf8(svg_data.clone())
+                .unwrap()
+                .replace("</svg>", &debug_svg);
+            fs::write(working_path.join("debug.svg"), svg_str.as_bytes())?;
+        }
+        */
+
         let lzma_options = LzmaOptions::new_preset(9)?;
-        let mut svg_compressor = XzEncoder::new_stream(
-            Cursor::new(svg_data),
-            xz2::stream::Stream::new_lzma_encoder(&lzma_options)?,
-        );
-        // let mut svg_compressor = brotli::CompressorReader::new(Cursor::new(svg_data), 4096, 9, 20);
-        let mut svg_compressed = vec![];
-        svg_compressor.read_to_end(&mut svg_compressed)?;
-        let svg_encoded = base64::encode(svg_compressed);
-        eprintln!(
-            "SVG compressed from {} down to {} (base64 encoded) in {}s",
-            ByteSize::b(original_size as u64),
-            ByteSize::b(svg_encoded.len() as u64),
-            start.elapsed().as_secs_f64()
-        );
-        let final_code = formatdoc!(
-            r##"
-            {}
-            <script>
+        let mut decompress_script = String::new();
+        for (i, (svg, class_name)) in svg_data.into_iter().zip(svg_class_names).enumerate() {
+            let start = Instant::now();
+            let original_size = svg.len();
+            let mut svg_compressor = XzEncoder::new_stream(
+                Cursor::new(svg),
+                xz2::stream::Stream::new_lzma_encoder(&lzma_options)?,
+            );
+            let mut svg_compressed = vec![];
+            svg_compressor.read_to_end(&mut svg_compressed)?;
+            let svg_encoded = base64::encode(svg_compressed);
+            decompress_script.push_str(&formatdoc!(r##"
                 LZMA.decompress(Uint8Array.from(atob("{}"), function(c) {{ return c.charCodeAt(0); }}), 
                     function(result, error) {{
                         var svgUrl = URL.createObjectURL(new Blob([result], {{type: "image/svg+xml"}}));
@@ -350,11 +415,22 @@ impl<'a> FragmentRenderer<'a> {
                     }}, 
                     function(p) {{}}
                 );
-            </script>
             "##,
-            self.config.lzma_script,
-            svg_encoded,
-            svg_class_name
+            svg_encoded, class_name
+            ));
+
+            eprintln!(
+                "SVG for page {} compressed from {} down to {} (base64 encoded) in {}s",
+                i + 1,
+                ByteSize::b(original_size as u64),
+                ByteSize::b(svg_encoded.len() as u64),
+                start.elapsed().as_secs_f64()
+            );
+        }
+
+        let final_code = format!(
+            r"{}<script>{}</script>",
+            self.config.lzma_script, decompress_script
         );
         *final_node = json!({
             "t": "RawBlock",
@@ -551,15 +627,16 @@ impl<'a> FragmentRenderer<'a> {
     }
 }
 
-fn svg_to_bboxes(node: usvg::Node, results: &mut Vec<PathBbox>) {
-    // TODO: may be look into node.traverse()?
-    if node.has_children() {
-        for ch in node.children() {
-            svg_to_bboxes(ch, results);
+fn svg_to_bboxes(node: usvg::Node) -> Vec<PathBbox> {
+    let mut results = vec![];
+    for node in node.descendants() {
+        if !node.has_children() {
+            if let Some(bbox) = node.calculate_bbox() {
+                results.push(bbox);
+            }
         }
-    } else if let Some(bbox) = node.calculate_bbox() {
-        results.push(bbox);
     }
+    results
 }
 
 /// Given a slice of bounding boxes and a y range, compute the x range that exactly covers all
@@ -589,6 +666,8 @@ fn x_range_for_y_range(
     }
 }
 
+// TODO: perhaps merge the function below with the function above, to save one full traversal of 
+// bboxes.
 fn refine_y_range(
     bboxes: &[PathBbox],
     y_min: f64,
@@ -601,7 +680,8 @@ fn refine_y_range(
     let y_min = y_min - tol;
     let y_max = y_max + tol;
     for bbox in bboxes {
-        if y_min <= bbox.top() && bbox.bottom() <= y_max {
+        // if y_min <= bbox.top() && bbox.bottom() <= y_max {
+        if y_min.max(bbox.top()) <= y_max.min(bbox.bottom()) {
             new_y_min = new_y_min.min(bbox.top());
             new_y_max = new_y_max.max(bbox.bottom());
         }
@@ -611,4 +691,20 @@ fn refine_y_range(
     } else {
         (new_y_min - margin, new_y_max + margin)
     }
+}
+
+fn split_svgs(bytes: &[u8]) -> Result<Vec<&[u8]>> {
+    let mut reader = quick_xml::Reader::from_bytes(bytes);
+    let mut cuts = vec![];
+    let mut last_pos = 0;
+    loop {
+        match reader.read_event_unbuffered()? {
+            quick_xml::events::Event::Decl(_) => cuts.push(last_pos),
+            quick_xml::events::Event::Eof => break,
+            _ => {}
+        }
+        last_pos = reader.buffer_position();
+    }
+    cuts.push(bytes.len());
+    Ok(cuts.windows(2).map(|w| &bytes[w[0]..w[1]]).collect())
 }
