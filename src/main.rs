@@ -3,8 +3,9 @@ use bytesize::ByteSize;
 use indoc::formatdoc;
 use serde_json::{json, Value};
 use std::{
+    borrow::Cow,
     collections::{hash_map::DefaultHasher, BTreeMap, HashSet},
-    fs::{self, File},
+    fs::File,
     hash::{Hash, Hasher},
     io::{stdin, stdout, Cursor, Read, Write},
     ops::Range,
@@ -18,10 +19,11 @@ use tempfile::TempDir;
 use usvg::{NodeExt, PathBbox};
 use xz2::{read::XzEncoder, stream::LzmaOptions};
 
-use crate::config::Config;
 use crate::synctex::Scanner;
+use crate::{config::Config, svgopt::optimize};
 
 mod config;
+mod svgopt;
 mod synctex;
 
 fn main() -> Result<()> {
@@ -159,7 +161,7 @@ impl<'a> FragmentRenderer<'a> {
             Some(_) => None,
             None => Some(TempDir::new()?),
         };
-        let working_path = match working_dir {
+        let working_path = match &working_dir {
             Some(working_dir) => working_dir.path().to_path_buf(),
             None => Path::new(&self.config.output_folder.unwrap()).to_path_buf(),
         }
@@ -205,6 +207,7 @@ impl<'a> FragmentRenderer<'a> {
             .iter()
             .map(|&svg| usvg::Tree::from_data(svg, &options.to_ref()))
             .collect::<Result<Vec<_>, _>>()?;
+
         // A unique class name for each svg is important because HTMLs from multiple posts
         // may be put together in the home page of a blog. Then the decompressing code of each page
         // starts a race, each trying to modify every fragment image.
@@ -379,18 +382,17 @@ impl<'a> FragmentRenderer<'a> {
             }
         }
 
-        /*
-        {
-            debug_svg.push_str("</svg>");
-            let svg_str = String::from_utf8(svg_data.clone())
-                .unwrap()
-                .replace("</svg>", &debug_svg);
-            fs::write(working_path.join("debug.svg"), svg_str.as_bytes())?;
-        }
-        */
-
         let lzma_options = LzmaOptions::new_preset(9)?;
         let mut decompress_script = String::new();
+        let svg_data = if self.config.optimizer.enabled {
+            svgs.iter()
+                .map(|tree| -> Result<Cow<[u8]>> {
+                    Ok(Cow::Owned(optimize(tree, self.config.optimizer.eps)?))
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            svg_data.iter().map(|data| Cow::Borrowed(*data)).collect()
+        };
         for (i, (svg, class_name)) in svg_data.into_iter().zip(svg_class_names).enumerate() {
             let start = Instant::now();
             let original_size = svg.len();
@@ -402,11 +404,12 @@ impl<'a> FragmentRenderer<'a> {
             svg_compressor.read_to_end(&mut svg_compressed)?;
             let svg_encoded = base64::encode(svg_compressed);
             decompress_script.push_str(&formatdoc!(r##"
-                LZMA.decompress(Uint8Array.from(atob("{}"), function(c) {{ return c.charCodeAt(0); }}), 
+                console.time("decompress_{page}");
+                LZMA.decompress(Uint8Array.from(atob("{svg}"), function(c) {{ return c.charCodeAt(0); }}), 
                     function(result, error) {{
+                        console.timeEnd("decompress_{page}");
                         var svgUrl = URL.createObjectURL(new Blob([result], {{type: "image/svg+xml"}}));
-                        var imgs = document.getElementsByClassName("{}");
-                        console.log(imgs.length);
+                        var imgs = document.getElementsByClassName("{class_name}");
                         for (var i = 0; i < imgs.length; i++) {{
                             var hashPos = imgs[i].src.indexOf("#");
                             if (hashPos != -1)
@@ -416,7 +419,7 @@ impl<'a> FragmentRenderer<'a> {
                     function(p) {{}}
                 );
             "##,
-            svg_encoded, class_name
+                page = i + 1, svg = svg_encoded, class_name = class_name
             ));
 
             eprintln!(
@@ -666,7 +669,7 @@ fn x_range_for_y_range(
     }
 }
 
-// TODO: perhaps merge the function below with the function above, to save one full traversal of 
+// TODO: perhaps merge the function below with the function above, to save one full traversal of
 // bboxes.
 fn refine_y_range(
     bboxes: &[PathBbox],

@@ -32,6 +32,8 @@ pub struct Config {
     pub lzma_script: String,
     /// Configuration related to templating of fragments.
     pub template: TemplateConfig,
+    /// Configuration for the SVG optimizer.
+    pub optimizer: OptimizerConfig,
     /// Output folder for intermediate files. Useful in case of LaTeX compilation errors.
     /// If none, the program dumps everything in a temp folder.
     pub output_folder: Option<String>,
@@ -45,6 +47,14 @@ pub struct TemplateConfig {
     pub inline_math: String,
     /// Template for display math.
     pub display_math: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct OptimizerConfig {
+    /// Is the optimizer enabled?
+    pub enabled: bool,
+    /// The precision bound for path similarity checks.
+    pub eps: f64,
 }
 
 impl Config {
@@ -75,7 +85,9 @@ impl Config {
             .set_default("template.inline_math", r"\({{fragment}}\)")?
             .set_default("template.display_math", indoc! {r"\[
                     {{fragment}}
-                \]"})?;
+                \]"})?
+            .set_default("optimizer.enabled", false)?
+            .set_default("optimizer.eps", 0.001)?;
 
         let exe_config = env::current_exe()?.join("jlconfig.toml");
         if exe_config.exists() {
