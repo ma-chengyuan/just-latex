@@ -3,7 +3,7 @@
 **How do you render LaTeX fragments on the Web? MathJaX? KaTeX? Why not ... just use LaTeX?**
 
 ![license](https://img.shields.io/badge/license-MIT-red)
-[![shield](https://img.shields.io/badge/crates.io-0.1.1-green)](https://crates.io/crates/just-latex)
+[![shield](https://img.shields.io/badge/crates.io-0.1.2-green)](https://crates.io/crates/just-latex)
 
 just-latex is a simple [Pandoc](https://pandoc.org/) filter that chains a bunch of existing tools in the TeX ecosystem, enabling the use of the actual LaTeX engine to render LaTeX fragments when converting to HTML. It aims to occupy a niche and provide a new option for users hampered by MathJaX or KaTeX.
 
@@ -51,7 +51,7 @@ These programs convert LaTeX *documents* to HTML whereas just-latex deals with L
 
 Also note that these systems aim to be clever by trying to identify certain elements in the input document and do them "the Web way," e.g. maths are converted to MathML or handed over to MathJaX and texts are extracted to be reflowed by the browser. That, in itself, seems like a source of troubles. 
 
-In comparison, just-latex are **small, simple and dumb**. It has less than 600 lines of code in Rust and uses mature libraries in the TeX community so you can fully understand how it works in 10 minutes (you will see below) and be 99% confident the rendered result will be identical to the one you see in a PDF.
+In comparison, just-latex are **small, simple and dumb**. It has just aboue 1000 lines of code in Rust and uses mature libraries in the TeX community so you can fully understand how it works in 10 minutes (you will see below) and be 99% confident the rendered result will be identical to the one you see in a PDF.
 
 ### SwiftLaTeX
 
@@ -131,7 +131,7 @@ Since 0.1.2 multi-page intermediate PDFs are supported. But **it is still recomm
 
 * TeX is slow, so is dvisvgm. Although the program itself runs quite fast converting a document still takes around 1 sec.
 
-* It is your reponsibility to set up the preamble in a way that the font size of the LaTeX fragments matches that of the surrounding text in HTML. For example, the default text size of HTML is 12pt, so you should pass `[12pt]` as an option to the `\documentclass{article}`. Also, note that for now the program does not do any special handling to inline maths in headings. This is a known issue and I plan to fix that later. 
+* It is your reponsibility to set up the preamble in a way that the font size of the LaTeX fragments matches that of the surrounding text in HTML. For example, the default text size of HTML is 12pt, so you should pass `[12pt]` as an option to the `\documentclass{article}`. Likewise, you should configure the header templates such that they match the size of your header.
 
 
 ## Is it Any Good?

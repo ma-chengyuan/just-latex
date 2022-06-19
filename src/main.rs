@@ -11,6 +11,7 @@ use std::{
     ops::Range,
     path::Path,
     process::Command,
+    rc::Rc,
     str::FromStr,
     time::Instant,
     vec,
@@ -20,7 +21,10 @@ use usvg::{NodeExt, PathBbox};
 use xz2::{read::XzEncoder, stream::LzmaOptions};
 
 use crate::synctex::Scanner;
-use crate::{config::Config, svgopt::optimize};
+use crate::{
+    config::{Config, TemplateConfig},
+    svgopt::optimize,
+};
 
 mod config;
 mod svgopt;
@@ -61,7 +65,7 @@ enum FragmentNodeRef<'a> {
 #[derive(Debug)]
 enum FragmentType {
     /// For ordinary inline maths.
-    InlineMath,
+    InlineMath(Style),
     /// For display maths.
     DisplayMath,
     /// These will be included in the .tex file without being surrounded by "{}".
@@ -69,6 +73,54 @@ enum FragmentType {
     /// For display maths starting with %dontshow. They are included in the tex files but not shown.
     /// Use them for macro definitions.
     DontShow,
+}
+
+// On style: technically the correct way to handle styles is to handle find a set or orthogonal
+// properties and make a product type out of it. But this is not extensible in a sense that
+// orthogonality might be broken as new styles are considered. So instead we here just consider
+// style to be an ordered list of style elements. The problem with this approach, however, is that
+// it becomes difficult to compare equivalence of styles. Is Strong then Emph equivalent to Emph
+// then Strong? Is nested Quote equivalent to single Quote? Equivalence of styles is necessary to
+// deduplicate fragments and reduce size of our output. Of course for sane inputs this wouldn't be
+// a problem.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StyleElement {
+    Header(u64),
+    Quote,
+    Strong,
+    Emph,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// Inline math style.
+enum Style {
+    Plain,
+    Fancy { base: Rc<Style>, this: StyleElement },
+}
+
+impl Style {
+    fn push(self, new: StyleElement) -> Self {
+        Self::Fancy {
+            base: Rc::new(self),
+            this: new,
+        }
+    }
+
+    fn template(&self, config: &TemplateConfig) -> String {
+        match self {
+            Style::Plain => config.inline_math_inner.clone(),
+            Style::Fancy { base, this } => {
+                let base_template = base.template(config);
+                let this_template = match this {
+                    StyleElement::Header(level) => &config.header[*level as usize - 1],
+                    StyleElement::Quote => &config.quote,
+                    StyleElement::Strong => &config.strong,
+                    StyleElement::Emph => &config.emph,
+                };
+                this_template.replace(&config.placeholder, &base_template)
+            }
+        }
+    }
 }
 
 impl<'a> FragmentRenderer<'a> {
@@ -84,11 +136,13 @@ impl<'a> FragmentRenderer<'a> {
             // Inline fragments are often duplicates of previous ones encountered.
             // Caveat: if inline fragments contain expansions of macro with side effect (which is
             // rather unlikely), then this could cause trouble!
-            FragmentType::InlineMath => {
+            FragmentType::InlineMath(ref styles) => {
                 let src = src.trim();
                 for item in self.fragments.iter_mut() {
                     match item.ty {
-                        FragmentType::InlineMath if item.src == src => {
+                        FragmentType::InlineMath(ref rstyles)
+                            if item.src == src && styles == rstyles =>
+                        {
                             item.refs.push(node_ref);
                             return;
                         }
@@ -119,14 +173,22 @@ impl<'a> FragmentRenderer<'a> {
         output.push('\n');
         let mut current_line = preamble_trimmed.lines().count() + 1;
         for item in self.fragments.iter() {
-            let template = match item.ty {
-                FragmentType::InlineMath => &self.config.template.inline_math,
-                FragmentType::DisplayMath => &self.config.template.display_math,
-                FragmentType::RawBlock | FragmentType::DontShow => {
-                    &self.config.template.placeholder
+            let template_config = &self.config.template;
+            let expanded = match &item.ty {
+                FragmentType::InlineMath(style) => {
+                    let inner = style
+                        .template(template_config)
+                        .replace(&template_config.placeholder, &item.src);
+                    self.config
+                        .template
+                        .inline_math
+                        .replace(&template_config.placeholder, &inner)
                 }
+                FragmentType::DisplayMath => template_config
+                    .display_math
+                    .replace(&template_config.placeholder, &item.src),
+                FragmentType::RawBlock | FragmentType::DontShow => item.src.clone(),
             };
-            let expanded = template.replace(&self.config.template.placeholder, &item.src);
             let expanded = expanded.trim_end();
             let start_line = current_line;
             output.push_str(expanded);
@@ -298,7 +360,7 @@ impl<'a> FragmentRenderer<'a> {
             if regions.is_empty() {
                 bail!("no boxes for {}", item.src);
             }
-            if matches!(item.ty, FragmentType::InlineMath) && regions.len() > 1 {
+            if matches!(item.ty, FragmentType::InlineMath(_)) && regions.len() > 1 {
                 bail!(
                     "inline fragments '{}' spans multiple pages {:?} (did you disable page numbering?)",
                     item.src,
@@ -345,13 +407,13 @@ impl<'a> FragmentRenderer<'a> {
                 }
 
                 let depth = match item.ty {
-                    FragmentType::InlineMath => y_range.1 - baseline,
+                    FragmentType::InlineMath(_) => y_range.1 - baseline,
                     FragmentType::DisplayMath | FragmentType::RawBlock => 0.0,
                     FragmentType::DontShow => unreachable!(),
                 };
                 imgs.push(formatdoc!(
                     r##"<img src="#svgView(viewBox({x:.2},{y:.2},{width:.2},{height:.2}))"
-                         class="{class_name}" alt = "{alt}"
+                         class="{class_name} jl inline" alt = "{alt}"
                          style="width:{width:.2}pt;height:{height:.2}pt;
                          top:{depth:.2}pt;position:relative;display:inline;margin-bottom:0pt;">"##,
                     x = x_range.0,
@@ -364,9 +426,12 @@ impl<'a> FragmentRenderer<'a> {
                 ));
             }
             let html = match item.ty {
-                FragmentType::InlineMath => imgs.join(""),
+                FragmentType::InlineMath(_) => imgs.join(""),
                 FragmentType::DisplayMath | FragmentType::RawBlock => {
-                    format!(r#"<p style="text-align:center;">{}</p>"#, imgs.join("<br>"))
+                    format!(
+                        r#"<div style="text-align:center;">{}</div>"#,
+                        imgs.join("<br>")
+                    )
                 }
                 FragmentType::DontShow => unreachable!(),
             };
@@ -403,23 +468,15 @@ impl<'a> FragmentRenderer<'a> {
             let mut svg_compressed = vec![];
             svg_compressor.read_to_end(&mut svg_compressed)?;
             let svg_encoded = base64::encode(svg_compressed);
-            decompress_script.push_str(&formatdoc!(r##"
-                console.time("decompress_{page}");
-                LZMA.decompress(Uint8Array.from(atob("{svg}"), function(c) {{ return c.charCodeAt(0); }}), 
-                    function(result, error) {{
-                        console.timeEnd("decompress_{page}");
-                        var svgUrl = URL.createObjectURL(new Blob([result], {{type: "image/svg+xml"}}));
-                        var imgs = document.getElementsByClassName("{class_name}");
-                        for (var i = 0; i < imgs.length; i++) {{
-                            var hashPos = imgs[i].src.indexOf("#");
-                            if (hashPos != -1)
-                                imgs[i].src = svgUrl + imgs[i].src.substring(hashPos);
-                        }}
-                    }}, 
-                    function(p) {{}}
-                );
-            "##,
-                page = i + 1, svg = svg_encoded, class_name = class_name
+            decompress_script.push_str(&formatdoc!(
+                r##"
+                    var w{page}=new Worker(s);
+                    w{page}.onmessage=f("{class_name}");
+                    w{page}.postMessage("{svg}");
+                "##,
+                page = i + 1,
+                svg = svg_encoded,
+                class_name = class_name
             ));
 
             eprintln!(
@@ -431,9 +488,19 @@ impl<'a> FragmentRenderer<'a> {
             );
         }
 
-        let final_code = format!(
-            r"{}<script>{}</script>",
-            self.config.lzma_script, decompress_script
+        let final_code = formatdoc!(
+            r##"
+            <script {extra_attribs}>
+                (function(){{
+                    var s=URL.createObjectURL(new Blob(['"function"==typeof importScripts&&(importScripts("{lzma_js_path}"),onmessage=function(a){{LZMA.decompress(Uint8Array.from(atob(a.data),function(a){{return a.charCodeAt(0)}}),function(a,b){{postMessage(a)}})}})'], {{type: "text/javascript"}}));
+                    var f=function(a){{return function(e){{for(var f=URL.createObjectURL(new Blob([e.data],{{type:"image/svg+xml"}})),c=document.getElementsByClassName(a),b=0;b<c.length;b++){{var d=c[b].src.indexOf("#");-1!=d&&(c[b].src=f+c[b].src.substring(d))}}}}}};
+                    {decompress_script}
+                }}());
+            </script>
+            "##,
+            extra_attribs = self.config.script_extra_attributes,
+            lzma_js_path = self.config.lzma_js_path,
+            decompress_script = decompress_script
         );
         *final_node = json!({
             "t": "RawBlock",
@@ -461,22 +528,34 @@ impl<'a> FragmentRenderer<'a> {
             if i == last_idx {
                 ret = Some(block);
             } else {
-                self.walk_block(block)?;
+                self.walk_block(block, Style::Plain)?;
             }
         }
         Ok(ret.unwrap())
     }
 
-    fn walk_block(&mut self, value: &'a mut Value) -> Result<()> {
+    fn walk_block(&mut self, value: &'a mut Value, style: Style) -> Result<()> {
         match value["t"].as_str().context("reading type of Block")? {
-            "Para" => self.walk_inlines(&mut value["c"], "Para"),
-            "Plain" => self.walk_inlines(&mut value["c"], "Plain"),
-            "LineBlock" => self.walk_list_of_inlines(&mut value["c"], "LineBlock"),
-            "Header" => self.walk_inlines(&mut value["c"][2], "Header"),
-            "BlockQuote" => self.walk_blocks(&mut value["c"], "BlockQuote"),
-            "OrderedList" => self.walk_list_of_blocks(&mut value["c"][1], "OrderedList"),
-            "BulletList" => self.walk_list_of_blocks(&mut value["c"], "BulletList"),
-            "Div" => self.walk_list_of_blocks(&mut value["c"][1], "Div"),
+            "Para" => self.walk_inlines(&mut value["c"], "Para", style),
+            "Plain" => self.walk_inlines(&mut value["c"], "Plain", style),
+            "LineBlock" => self.walk_list_of_inlines(&mut value["c"], "LineBlock", style),
+            "Header" => {
+                let level = value["c"][0].as_u64().context("reading level of Header")?;
+                self.walk_inlines(
+                    &mut value["c"][2],
+                    "Header",
+                    style.push(StyleElement::Header(level)),
+                )?;
+                Ok(())
+            }
+            "BlockQuote" => self.walk_blocks(
+                &mut value["c"],
+                "BlockQuote",
+                style.push(StyleElement::Quote),
+            ),
+            "OrderedList" => self.walk_list_of_blocks(&mut value["c"][1], "OrderedList", style),
+            "BulletList" => self.walk_list_of_blocks(&mut value["c"], "BulletList", style),
+            "Div" => self.walk_list_of_blocks(&mut value["c"][1], "Div", style),
             "RawBlock" => {
                 let c = &value["c"];
                 let format = c[0].as_str().context("reading format of RawBlock")?;
@@ -504,10 +583,10 @@ impl<'a> FragmentRenderer<'a> {
                 {
                     match i {
                         1 => {
-                            self.walk_blocks(&mut content[1], "Table.Caption")?;
+                            self.walk_blocks(&mut content[1], "Table.Caption", style.clone())?;
                         }
                         3 => {
-                            self.walk_rows(&mut content[1], "Table.TableHead")?;
+                            self.walk_rows(&mut content[1], "Table.TableHead", style.clone())?;
                         }
                         4 => {
                             for table_body in content
@@ -520,12 +599,12 @@ impl<'a> FragmentRenderer<'a> {
                                     .iter_mut()
                                     .skip(2)
                                 {
-                                    self.walk_rows(rows, "Table.[TableBody].[Row]")?;
+                                    self.walk_rows(rows, "Table.[TableBody].[Row]", style.clone())?;
                                 }
                             }
                         }
                         5 => {
-                            self.walk_rows(&mut content[1], "Table.TableFoot")?;
+                            self.walk_rows(&mut content[1], "Table.TableFoot", style.clone())?;
                         }
                         _ => {}
                     }
@@ -536,14 +615,17 @@ impl<'a> FragmentRenderer<'a> {
         }
     }
 
-    fn walk_inline(&mut self, value: &'a mut Value) -> Result<()> {
+    fn walk_inline(&mut self, value: &'a mut Value, style: Style) -> Result<()> {
         match value["t"].as_str().context("reading type of Inline")? {
             "Math" => {
                 let c = &value["c"];
                 let ty = c[0]["t"].as_str().context("reading type of Math")?;
                 let text = String::from(c[1].as_str().context("reading source of Math")?);
                 let ty = match ty {
-                    "InlineMath" => FragmentType::InlineMath,
+                    // A better idea would be to use persistent list which avoids cloning and much
+                    // of the push-and-pop boilerplates below. But empirically style don't have
+                    // a lot of elements.
+                    "InlineMath" => FragmentType::InlineMath(style),
                     "DisplayMath" => {
                         let trimmed_text = text.trim_start();
                         if trimmed_text.starts_with("%raw") {
@@ -559,62 +641,74 @@ impl<'a> FragmentRenderer<'a> {
                 self.add_fragment(ty, &text, FragmentNodeRef::Inline(value));
                 Ok(())
             }
-            "Emph" => self.walk_inlines(&mut value["c"], "Emph"),
+            "Emph" => self.walk_inlines(&mut value["c"], "Emph", style.push(StyleElement::Emph)),
             // TODO: render them differently in latex.
-            "Underline" => self.walk_inlines(&mut value["c"], "Underline"),
-            "Strong" => self.walk_inlines(&mut value["c"], "Strong"),
-            "Strikeout" => self.walk_inlines(&mut value["c"], "Strikeout"),
-            "Link" => self.walk_inlines(&mut value["c"][1], "Link"),
-            "Image" => self.walk_inlines(&mut value["c"][1], "Image"),
+            "Underline" => self.walk_inlines(&mut value["c"], "Underline", style),
+            "Strong" => {
+                self.walk_inlines(&mut value["c"], "Strong", style.push(StyleElement::Strong))
+            }
+            "Strikeout" => self.walk_inlines(&mut value["c"], "Strikeout", style),
+            "Link" => self.walk_inlines(&mut value["c"][1], "Link", style),
+            "Image" => self.walk_inlines(&mut value["c"][1], "Image", style),
             _ => Ok(()),
         }
     }
 
-    fn walk_blocks(&mut self, value: &'a mut Value, parent: &str) -> Result<()> {
+    fn walk_blocks(&mut self, value: &'a mut Value, parent: &str, style: Style) -> Result<()> {
         for block in value
             .as_array_mut()
             .with_context(|| format!("reading {}.[Block]", parent))?
             .iter_mut()
         {
-            self.walk_block(block)?;
+            self.walk_block(block, style.clone())?;
         }
         Ok(())
     }
 
-    fn walk_list_of_blocks(&mut self, value: &'a mut Value, parent: &str) -> Result<()> {
+    fn walk_list_of_blocks(
+        &mut self,
+        value: &'a mut Value,
+        parent: &str,
+        style: Style,
+    ) -> Result<()> {
         for blocks in value
             .as_array_mut()
             .with_context(|| format!("reading {}.[[Block]]", parent))?
             .iter_mut()
         {
-            self.walk_blocks(blocks, parent)?;
+            self.walk_blocks(blocks, parent, style.clone())?;
         }
         Ok(())
     }
 
-    fn walk_inlines(&mut self, value: &'a mut Value, parent: &str) -> Result<()> {
+    fn walk_inlines(&mut self, value: &'a mut Value, parent: &str, style: Style) -> Result<()> {
         for inline in value
             .as_array_mut()
             .with_context(|| format!("reading {}.[Inline]", parent))?
             .iter_mut()
         {
-            self.walk_inline(inline)?;
+            self.walk_inline(inline, style.clone())?;
         }
         Ok(())
     }
 
-    fn walk_list_of_inlines(&mut self, value: &'a mut Value, parent: &str) -> Result<()> {
+    fn walk_list_of_inlines(
+        &mut self,
+        value: &'a mut Value,
+        parent: &str,
+        style: Style,
+    ) -> Result<()> {
         for inlines in value
             .as_array_mut()
             .with_context(|| format!("reading {}.[[Inline]]", parent))?
             .iter_mut()
         {
-            self.walk_inlines(inlines, parent)?;
+            self.walk_inlines(inlines, parent, style.clone())?;
         }
         Ok(())
     }
 
-    fn walk_rows(&mut self, value: &'a mut Value, parent: &str) -> Result<()> {
+    fn walk_rows(&mut self, value: &'a mut Value, parent: &str, style: Style) -> Result<()> {
         for row in value
             .as_array_mut()
             .with_context(|| format!("reading {}.[Row]", parent))?
@@ -623,7 +717,11 @@ impl<'a> FragmentRenderer<'a> {
                 .as_array_mut()
                 .with_context(|| format!("reading {}.[Row].[Cell]", parent))?
             {
-                self.walk_blocks(&mut cell[4], "[Cell] of Row of TableHead of Table")?;
+                self.walk_blocks(
+                    &mut cell[4],
+                    "[Cell] of Row of TableHead of Table",
+                    style.clone(),
+                )?;
             }
         }
         Ok(())

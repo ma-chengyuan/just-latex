@@ -26,10 +26,13 @@ pub struct Config {
     ///
     /// A positive value makes inline fragments higher.
     pub baseline_rise: f64,
-    /// The tag that inserts the LZMA decompressor.
-    ///
-    /// But really it can also include anything you want to insert along at the end of the HTML.
-    pub lzma_script: String,
+    /// Path to lzma-d-min.js.
+    pub lzma_js_path: String,
+    /// Extra attributes to the decompressor <script> tag.
+    /// 
+    /// For instance, in some pjax implementations a script needs to have data-pjax as 
+    /// as attribute for it to be executed when the page loads.
+    pub script_extra_attributes: String,
     /// Configuration related to templating of fragments.
     pub template: TemplateConfig,
     /// Configuration for the SVG optimizer.
@@ -43,8 +46,14 @@ pub struct Config {
 pub struct TemplateConfig {
     /// The placeholder that will be replaced by the fragment content for all templates below.
     pub placeholder: String,
-    /// Template for inline math.
+    /// Template for inline math
     pub inline_math: String,
+    pub inline_math_inner: String,
+    // Style elements
+    pub strong: String,
+    pub emph: String,
+    pub quote: String,
+    pub header: Vec<String>,
     /// Template for display math.
     pub display_math: String,
 }
@@ -59,6 +68,7 @@ pub struct OptimizerConfig {
 
 impl Config {
     pub fn load() -> Result<Self> {
+        let placeholder = "{{fragment}}";
         let mut c = config::Config::builder()
             .set_default(
                 "preamble",
@@ -77,15 +87,23 @@ impl Config {
             .set_default("x_range_margin", 1.0)?
             .set_default("y_range_margin", 1.0)?
             .set_default("baseline_rise", 0.0)?
-            .set_default("lzma_script", 
-            r#"<script src="https://cdn.jsdelivr.net/npm/lzma@2.3.2/src/lzma-d-min.js"></script>"#)?
+            .set_default("lzma_js_path", "https://cdn.jsdelivr.net/npm/lzma@2/src/lzma-d-min.js")?
+            .set_default("script_extra_attributes", "")?
             .set_default("output_folder", Option::<String>::None)?
             // Default templates...
-            .set_default("template.placeholder", "{{fragment}}")?
-            .set_default("template.inline_math", r"\({{fragment}}\)")?
-            .set_default("template.display_math", indoc! {r"\[
-                    {{fragment}}
-                \]"})?
+            .set_default("template.placeholder", placeholder)?
+            .set_default("template.inline_math", format!(r"\({}\)", placeholder))?
+            .set_default("template.inline_math_inner", placeholder)?
+            .set_default("template.inline_quote", placeholder)?
+            .set_default("template.emph", placeholder)?
+            .set_default("template.strong", placeholder)?
+            .set_default("template.quote", placeholder)?
+            .set_default("template.header", 
+                ["24", "18", "14.04", "12", "9.96", "8.04"]
+                .map(|pt| format!(r"\text{{\fontsize{{{}pt}}{{0}}\selectfont${}$}}", pt, placeholder))
+                .to_vec()
+            )?
+            .set_default("template.display_math", format!("\\[\n    {}\n\\]", placeholder))?
             .set_default("optimizer.enabled", false)?
             .set_default("optimizer.eps", 0.001)?;
 
