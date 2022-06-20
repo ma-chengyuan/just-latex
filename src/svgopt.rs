@@ -21,6 +21,7 @@
 use std::{
     collections::{BTreeMap, HashMap},
     io::Cursor,
+    time::Instant,
 };
 
 use anyhow::Result;
@@ -192,6 +193,7 @@ fn same_style(a: &Path, b: &Path, eps: f64) -> bool {
 }
 
 pub fn optimize(tree: &Tree, eps: f64) -> Result<Vec<u8>> {
+    let start = Instant::now();
     let mut path_tree = PathTree::default();
     let mut count = 0usize;
     let mut total = 0usize;
@@ -209,7 +211,7 @@ pub fn optimize(tree: &Tree, eps: f64) -> Result<Vec<u8>> {
         if !node.has_children() {
             if let NodeKind::Path(p) = &mut *node.borrow_mut() {
                 let id = total;
-                // Temporarily prefix path ids with their indices, so we can identify them in the 
+                // Temporarily prefix path ids with their indices, so we can identify them in the
                 // SVG output. They will be stripped off by then.
                 p.id = format!("{}{}{}", id, delim, p.id);
                 let fingerprint = PathFingerprint::new(p);
@@ -314,6 +316,11 @@ pub fn optimize(tree: &Tree, eps: f64) -> Result<Vec<u8>> {
         }
     }
 
-    eprintln!("SVG optimizer found {}/{} similar paths", count, total);
+    eprintln!(
+        "SVG optimizer found {}/{} similar paths in {}s",
+        count,
+        total,
+        start.elapsed().as_secs_f64()
+    );
     Ok(writer.into_inner().into_inner())
 }
