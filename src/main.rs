@@ -31,13 +31,11 @@ mod svgopt;
 mod synctex;
 
 fn main() -> Result<()> {
-    let config = Config::load()?;
     let mut buffer = String::new();
     let _ = stdin().read_to_string(&mut buffer)?;
-
     let mut tree = Value::from_str(&buffer)?;
+    let config = Config::load(&tree)?;
     FragmentRenderer::new(config).render_with_latex(&mut tree)?;
-
     let output = serde_json::to_vec(&tree)?;
     stdout().write_all(&output)?;
     Ok(())
@@ -411,18 +409,31 @@ impl<'a> FragmentRenderer<'a> {
                     FragmentType::DisplayMath | FragmentType::RawBlock => 0.0,
                     FragmentType::DontShow => unreachable!(),
                 };
+                let extra_style = match item.ty {
+                    FragmentType::InlineMath(_) => &self.config.extra_style_inline,
+                    FragmentType::DisplayMath | FragmentType::RawBlock => {
+                        &self.config.extra_style_display
+                    }
+                    FragmentType::DontShow => unreachable!(),
+                };
                 imgs.push(formatdoc!(
                     r##"<img src="#svgView(viewBox({x:.2},{y:.2},{width:.2},{height:.2}))"
-                         class="{class_name} jl inline" alt = "{alt}"
+                         class="{class_name} jl-{ty}" alt = "{alt}"
                          style="width:{width:.2}pt;height:{height:.2}pt;
-                         top:{depth:.2}pt;position:relative;display:inline;margin-bottom:0pt;">"##,
+                         top:{depth:.2}pt;position:relative;display:inline;{extra_style}">"##,
                     x = x_range.0,
                     y = y_range.0,
-                    class_name = svg_class_names[svg_idx],
                     width = x_range.1 - x_range.0,
                     height = y_range.1 - y_range.0,
                     depth = depth - self.config.baseline_rise,
+                    ty = if let FragmentType::InlineMath(_) = item.ty {
+                        "inline"
+                    } else {
+                        "display"
+                    },
+                    class_name = svg_class_names[svg_idx],
                     alt = html_escape::encode_text(&item.src),
+                    extra_style = extra_style
                 ));
             }
             let html = match item.ty {

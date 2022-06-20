@@ -1,8 +1,10 @@
 use std::{env, path::Path};
 
-use anyhow::{format_err, Context, Result};
+use anyhow::{bail, format_err, Context, Result};
+use config::{builder::DefaultState, ConfigBuilder};
 use indoc::indoc;
 use serde::Deserialize;
+use serde_json::Value;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
@@ -29,10 +31,22 @@ pub struct Config {
     /// Path to lzma-d-min.js.
     pub lzma_js_path: String,
     /// Extra attributes to the decompressor <script> tag.
-    /// 
-    /// For instance, in some pjax implementations a script needs to have data-pjax as 
+    ///
+    /// For instance, in some pjax implementations a script needs to have data-pjax as
     /// as attribute for it to be executed when the page loads.
     pub script_extra_attributes: String,
+
+    /// Extra styles to be inserted to inline rendered <imgs>.
+    ///
+    /// Or, alternatively, all inline <imgs> are accessible via `.jl-inline`, so you can also
+    /// include extra styling in some separate CSS.
+    pub extra_style_inline: String,
+    /// Extra styles to be inserted to display rendered <imgs>.
+    ///
+    /// Or, alternatively, all display <imgs> are accessible via `.jl-display`, so you can also
+    /// include extra styling in some separate CSS.
+    pub extra_style_display: String,
+
     /// Configuration related to templating of fragments.
     pub template: TemplateConfig,
     /// Configuration for the SVG optimizer.
@@ -67,7 +81,8 @@ pub struct OptimizerConfig {
 }
 
 impl Config {
-    pub fn load() -> Result<Self> {
+    /// Loads configuration from config files, as well as document.
+    pub fn load(tree: &Value) -> Result<Self> {
         let placeholder = "{{fragment}}";
         let mut c = config::Config::builder()
             .set_default(
@@ -89,6 +104,8 @@ impl Config {
             .set_default("baseline_rise", 0.0)?
             .set_default("lzma_js_path", "https://cdn.jsdelivr.net/npm/lzma@2/src/lzma-d-min.js")?
             .set_default("script_extra_attributes", "")?
+            .set_default("extra_style_inline", "")?
+            .set_default("extra_style_display", "")?
             .set_default("output_folder", Option::<String>::None)?
             // Default templates...
             .set_default("template.placeholder", placeholder)?
@@ -121,8 +138,106 @@ impl Config {
             c = c.add_source(config::File::new("jlconfig.toml", config::FileFormat::Toml));
         }
 
+        for (key, value) in tree["meta"]
+            .as_object()
+            .context("reading document metadata")?
+        {
+            if key == "jlconfig" {
+                if value["t"] != "MetaMap" {
+                    bail!("in Front Matter configuration, jlconfig must be a map!");
+                }
+                for (sub_key, value) in value["c"].as_object().context("reading map of MetaMap")? {
+                    c = walk_meta(c, value, sub_key)?;
+                }
+            } else if let Some(key) = key.strip_prefix("jlconfig.") {
+                c = walk_meta(c, value, key)?;
+            }
+        }
+
         c.build()?
             .try_deserialize()
             .map_err(|e| format_err!("cannot load config: {}", e))
     }
+}
+
+fn walk_meta(
+    mut cb: ConfigBuilder<DefaultState>,
+    value: &Value,
+    key: &str,
+) -> Result<ConfigBuilder<DefaultState>> {
+    match value["t"].as_str().context("reading type of Meta")? {
+        "MetaInlines" => {
+            let mut content = String::new();
+            meta_inlines_to_string(&value["c"], &mut content)?;
+            Ok(cb.set_override(key, content)?)
+        }
+        "MetaBlocks" => {
+            let mut content = String::new();
+            meta_blocks_to_string(&value["c"], &mut content)?;
+            Ok(cb.set_override(key, content)?)
+        }
+        "MetaMap" => {
+            for (sub_key, value) in value["c"].as_object().context("reading map of MetaMap")? {
+                cb = walk_meta(cb, value, &format!("{}.{}", key, sub_key))?;
+            }
+            Ok(cb)
+        }
+        "MetaList" => {
+            for (i, value) in value["c"]
+                .as_array()
+                .context("reading array of MetaList")?
+                .iter()
+                .enumerate()
+            {
+                cb = walk_meta(cb, value, &format!("{}[{}]", key, i))?;
+            }
+            Ok(cb)
+        }
+        "MetaString" => Ok(cb.set_override(
+            key,
+            value["c"].as_str().context("reading value of MetaString")?,
+        )?),
+        "MetaBool" => Ok(cb.set_override(
+            key,
+            value["c"].as_bool().context("reading value of MetaBool")?,
+        )?),
+        ty => bail!("unsupported Meta type: {}", ty),
+    }
+}
+
+fn meta_inlines_to_string(value: &Value, content: &mut String) -> Result<()> {
+    for value in value.as_array().context("reading Meta.[Inline]")? {
+        match value["t"].as_str().context("reading type of Meta.Inline")? {
+            "Str" => content.push_str(
+                value["c"]
+                    .as_str()
+                    .context("reading content of Meta.Inline.Str")?,
+            ),
+            "RawInline" | "Code" | "Math" => content.push_str(
+                value["c"][1]
+                    .as_str()
+                    .context("reading content of Meta.Inline.RawInline/Code/Math")?,
+            ),
+            "Emph" | "Strong" | "Underline" => meta_inlines_to_string(&value["c"], content)?,
+            "Space" => content.push(' '),
+            ty => bail!("unsupported Inline type in Meta: {}", ty),
+        }
+    }
+    Ok(())
+}
+
+fn meta_blocks_to_string(value: &Value, content: &mut String) -> Result<()> {
+    for value in value.as_array().context("reading Meta.[Block]")? {
+        match value["t"].as_str().context("reading type of Meta.Block")? {
+            "Plain" | "Para" => meta_inlines_to_string(&value["c"], content)?,
+            "RawBlock" | "CodeBlock" => content.push_str(
+                value["c"][1]
+                    .as_str()
+                    .context("reading content of Meta.Block.RawBlock/CodeBlock")?,
+            ),
+            ty => bail!("unsupported Inline type in Meta: {}", ty),
+        }
+        content.push('\n');
+    }
+    Ok(())
 }
