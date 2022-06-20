@@ -410,9 +410,14 @@ impl<'a> FragmentRenderer<'a> {
                     FragmentType::DontShow => unreachable!(),
                 };
                 let extra_style = match item.ty {
-                    FragmentType::InlineMath(_) => &self.config.extra_style_inline,
+                    FragmentType::InlineMath(_) => format!(
+                        "top:{depth:.2}pt;margin-top:{neg_depth:.2}pt;position:relative;{extra_style}",
+                        depth = depth - self.config.baseline_rise,
+                        neg_depth = self.config.baseline_rise - depth,
+                        extra_style = self.config.extra_style_inline
+                    ),
                     FragmentType::DisplayMath | FragmentType::RawBlock => {
-                        &self.config.extra_style_display
+                        self.config.extra_style_display.clone()
                     }
                     FragmentType::DontShow => unreachable!(),
                 };
@@ -420,12 +425,11 @@ impl<'a> FragmentRenderer<'a> {
                     r##"<img src="#svgView(viewBox({x:.2},{y:.2},{width:.2},{height:.2}))"
                          class="{class_name} jl-{ty}" alt = "{alt}"
                          style="width:{width:.2}pt;height:{height:.2}pt;
-                         top:{depth:.2}pt;position:relative;display:inline;{extra_style}">"##,
+                         display:inline;{extra_style}">"##,
                     x = x_range.0,
                     y = y_range.0,
                     width = x_range.1 - x_range.0,
                     height = y_range.1 - y_range.0,
-                    depth = depth - self.config.baseline_rise,
                     ty = if let FragmentType::InlineMath(_) = item.ty {
                         "inline"
                     } else {
