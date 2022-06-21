@@ -51,7 +51,7 @@ These programs convert LaTeX *documents* to HTML whereas just-latex deals with L
 
 Also note that these systems aim to be clever by trying to identify certain elements in the input document and do them "the Web way," e.g. maths are converted to MathML or handed over to MathJaX and texts are extracted to be reflowed by the browser. That, in itself, seems like a source of troubles. 
 
-In comparison, just-latex are **small, simple and dumb**. It has just aboue 1000 lines of code in Rust and uses mature libraries in the TeX community so you can fully understand how it works in 10 minutes (you will see below) and be 99% confident the rendered result will be identical to the one you see in a PDF.
+In comparison, just-latex are **small, simple and dumb**. It has just about 1000 lines of code in Rust and uses mature libraries in the TeX community so you can fully understand how it works in 10 minutes (you will see below) and be 99% confident the rendered result will be identical to the one you see in a PDF.
 
 ### SwiftLaTeX
 
