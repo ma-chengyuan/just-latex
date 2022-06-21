@@ -444,7 +444,7 @@ impl<'a> FragmentRenderer<'a> {
                 FragmentType::InlineMath(_) => imgs.join(""),
                 FragmentType::DisplayMath | FragmentType::RawBlock => {
                     format!(
-                        r#"<div style="text-align:center;">{}</div>"#,
+                        r#"<div class="jl-display-div" style="text-align:center;">{}</div>"#,
                         imgs.join("<br>")
                     )
                 }
