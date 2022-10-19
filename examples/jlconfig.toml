@@ -9,7 +9,9 @@ preamble = '''
 '''
 postamble = '\end{document}'
 latex = 'pdflatex'
+mode = 'dvi'
 dvisvgm = 'dvisvgm'
+output_folder = 'temp'
 
 [optimizer]
-enabled = true
+enabled = false

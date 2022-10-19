@@ -14,8 +14,10 @@ pub struct Config {
     pub latex: String,
     /// Path to the dvisvgm executable.
     pub dvisvgm: String,
+    /// DVI mode?
+    pub mode: String,
     /// Defines the error tolerance for [`crate::x_range_for_y_range`] and
-    /// [`crate::refine_y_range`].
+    /// [`crate::refine_y_range`].dvi_
     pub y_range_tol: f64,
     /// A blank horizontal margin to rendered inline fragments. The unit is pt.
     ///
@@ -98,6 +100,7 @@ impl Config {
             .set_default("postamble", r"\end{document}")?
             .set_default("latex", "pdflatex")?
             .set_default("dvisvgm", "dvisvgm")?
+            .set_default("mode", "pdf")?
             .set_default("y_range_tol", 0.0)?
             .set_default("x_range_margin", 1.0)?
             .set_default("y_range_margin", 1.0)?
@@ -157,6 +160,16 @@ impl Config {
         c.build()?
             .try_deserialize()
             .map_err(|e| format_err!("cannot load config: {}", e))
+    }
+
+    pub fn sanity_check(&self) -> Result<()> {
+        if self.mode != "pdf" && self.mode != "dvi" && self.mode != "xdv" {
+            bail!("unknown mode: must be one of 'pdf', 'dvi', or 'xdv'");
+        }
+        if self.mode != "pdf" && self.optimizer.enabled {
+            bail!("DVI/XDV mode is incompatible with JustLaTeX's SVG optimizer");
+        }
+        Ok(())
     }
 }
 

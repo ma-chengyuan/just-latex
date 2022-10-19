@@ -17,7 +17,6 @@ use std::{
     vec,
 };
 use tempfile::TempDir;
-use usvg::{NodeExt, PathBbox};
 use xz2::{read::XzEncoder, stream::LzmaOptions};
 
 use crate::synctex::Scanner;
@@ -27,14 +26,22 @@ use crate::{
 };
 
 mod config;
+mod svg;
 mod svgopt;
 mod synctex;
 
 fn main() -> Result<()> {
+    /*
+    let data = std::fs::read_to_string("source-1.svg")?;
+    svg::texts_to_bboxes(&data);
+    return Ok(());
+    */
+
     let mut buffer = String::new();
     let _ = stdin().read_to_string(&mut buffer)?;
     let mut tree = Value::from_str(&buffer)?;
     let config = Config::load(&tree)?;
+    config.sanity_check()?;
     FragmentRenderer::new(config).render_with_latex(&mut tree)?;
     let output = serde_json::to_vec(&tree)?;
     stdout().write_all(&output)?;
@@ -233,8 +240,20 @@ impl<'a> FragmentRenderer<'a> {
             let mut source = File::create(&source_path)?;
             source.write_all(source_str.as_bytes())?;
         }
-        let pdf_path = working_path.join("source.pdf");
-        let latex_command = Command::new(self.config.latex)
+        let mut latex_command = Command::new(self.config.latex);
+        if self.config.mode == "dvi" {
+            latex_command.arg("-output-format=dvi");
+        } else if self.config.mode == "xdv" {
+            latex_command.arg("--no-pdf");
+        }
+        let pdf_path = working_path.join(if self.config.mode == "pdf" {
+            "source.pdf"
+        } else if self.config.mode == "dvi" {
+            "source.dvi"
+        } else {
+            "source.xdv"
+        });
+        let latex_command = latex_command
             .args([
                 "-synctex=-1",
                 "-interaction=nonstopmode",
@@ -250,23 +269,25 @@ impl<'a> FragmentRenderer<'a> {
             bail!("fail to run latex");
         }
 
-        // Right now we assume everything fits in one page so there's only one svg generated.
-        // This requires a page to be REALLY long/high. TeX can handle at most 65536pt -- I assume
-        // this is enough as long as we are not writing a book.
-        let dvisvgm_command = Command::new(self.config.dvisvgm)
-            .args(["-s", "-R", "-P", "-p1-", pdf_path.to_str().unwrap()])
+        let mut dvisvgm_command = Command::new(self.config.dvisvgm);
+        if self.config.mode == "pdf" {
+            dvisvgm_command.arg("--pdf");
+        } else {
+            dvisvgm_command.arg("--font-format=ttf");
+        }
+        let dvisvgm_command = dvisvgm_command
+            .args(["--stdout", "--relative", "-p1-", pdf_path.to_str().unwrap()])
             .current_dir(&working_path)
             .output()?;
         if !dvisvgm_command.status.success() {
             bail!("fail to run dvisvgm");
         }
-        let options = usvg::Options::default();
         // Split svgs because we might have multiple pages.
-        let svg_data = split_svgs(&dvisvgm_command.stdout)?;
+        let svg_data = svg::split_svgs(&dvisvgm_command.stdout)?;
         let svgs = svg_data
             .iter()
-            .map(|&svg| usvg::Tree::from_data(svg, &options.to_ref()))
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|&svg| String::from_utf8_lossy(svg))
+            .collect::<Vec<_>>();
 
         // A unique class name for each svg is important because HTMLs from multiple posts
         // may be put together in the home page of a blog. Then the decompressing code of each page
@@ -281,10 +302,17 @@ impl<'a> FragmentRenderer<'a> {
             })
             .collect::<Vec<_>>();
 
-        let bboxes = svgs
+        let svg_and_bboxes = svgs
             .iter()
-            .map(|svg| svg_to_bboxes(svg.root()))
-            .collect::<Vec<_>>();
+            .map(|svg| -> Result<_> {
+                let (tree, mut bboxes) = svg::paths_to_bboxes(svg)?;
+                if self.config.mode != "pdf" {
+                    bboxes.extend(svg::texts_to_bboxes(svg)?);
+                }
+                Ok((tree, bboxes))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let (svgs, bboxes): (Vec<_>, Vec<_>) = svg_and_bboxes.into_iter().unzip();
 
         let scanner = Scanner::new(pdf_path, &working_path);
         let mut seen_boxes = HashSet::new();
@@ -379,23 +407,27 @@ impl<'a> FragmentRenderer<'a> {
             {
                 let svg_idx = page as usize - 1;
                 let y_base = svgs[svg_idx].svg_node().view_box.rect.top();
+                let x_base = svgs[svg_idx].svg_node().view_box.rect.left();
                 // Convert everything from TeX coordinates to SVG coordinates.
                 y_range = (
                     y_range.0 * TEX2SVG_SCALING + y_base,
                     y_range.1 * TEX2SVG_SCALING + y_base,
                 );
-                x_range = x_range_for_y_range(
+                x_range = svg::x_range_for_y_range(
                     &bboxes[svg_idx],
                     y_range.0,
                     y_range.1,
                     self.config.y_range_tol,
                     self.config.x_range_margin,
                 )
-                .unwrap_or((x_range.0 * TEX2SVG_SCALING, x_range.1 * TEX2SVG_SCALING));
+                .unwrap_or((
+                    x_base + x_range.0 * TEX2SVG_SCALING,
+                    x_base + x_range.1 * TEX2SVG_SCALING,
+                ));
                 baseline = baseline * TEX2SVG_SCALING + y_base;
 
                 if let FragmentType::DisplayMath | FragmentType::RawBlock = item.ty {
-                    y_range = refine_y_range(
+                    y_range = svg::refine_y_range(
                         &bboxes[svg_idx],
                         y_range.0,
                         y_range.1,
@@ -741,86 +773,4 @@ impl<'a> FragmentRenderer<'a> {
         }
         Ok(())
     }
-}
-
-fn svg_to_bboxes(node: usvg::Node) -> Vec<PathBbox> {
-    let mut results = vec![];
-    for node in node.descendants() {
-        if !node.has_children() {
-            if let Some(bbox) = node.calculate_bbox() {
-                results.push(bbox);
-            }
-        }
-    }
-    results
-}
-
-/// Given a slice of bounding boxes and a y range, compute the x range that exactly covers all
-/// bounding boxes which have non-empty intersection with the y range. There is a tolerance term
-/// for robustness, because dvisvgm and synctex aren't always very accurate.
-fn x_range_for_y_range(
-    bboxes: &[PathBbox],
-    y_min: f64,
-    y_max: f64,
-    tol: f64,
-    margin: f64,
-) -> Option<(f64, f64)> {
-    let mut x_min = f64::MAX;
-    let mut x_max = f64::MIN;
-    let y_min = y_min - tol;
-    let y_max = y_max + tol;
-    for bbox in bboxes {
-        if y_min.max(bbox.top()) <= y_max.min(bbox.bottom()) {
-            x_min = x_min.min(bbox.left());
-            x_max = x_max.max(bbox.right());
-        }
-    }
-    if x_min == f64::MAX {
-        None
-    } else {
-        Some((x_min - margin, x_max + margin))
-    }
-}
-
-// TODO: perhaps merge the function below with the function above, to save one full traversal of
-// bboxes.
-fn refine_y_range(
-    bboxes: &[PathBbox],
-    y_min: f64,
-    y_max: f64,
-    tol: f64,
-    margin: f64,
-) -> (f64, f64) {
-    let mut new_y_min = f64::MAX;
-    let mut new_y_max = f64::MIN;
-    let y_min = y_min - tol;
-    let y_max = y_max + tol;
-    for bbox in bboxes {
-        // if y_min <= bbox.top() && bbox.bottom() <= y_max {
-        if y_min.max(bbox.top()) <= y_max.min(bbox.bottom()) {
-            new_y_min = new_y_min.min(bbox.top());
-            new_y_max = new_y_max.max(bbox.bottom());
-        }
-    }
-    if new_y_min == f64::MAX {
-        (y_min + tol - margin, y_max - tol + margin)
-    } else {
-        (new_y_min - margin, new_y_max + margin)
-    }
-}
-
-fn split_svgs(bytes: &[u8]) -> Result<Vec<&[u8]>> {
-    let mut reader = quick_xml::Reader::from_bytes(bytes);
-    let mut cuts = vec![];
-    let mut last_pos = 0;
-    loop {
-        match reader.read_event_unbuffered()? {
-            quick_xml::events::Event::Decl(_) => cuts.push(last_pos),
-            quick_xml::events::Event::Eof => break,
-            _ => {}
-        }
-        last_pos = reader.buffer_position();
-    }
-    cuts.push(bytes.len());
-    Ok(cuts.windows(2).map(|w| &bytes[w[0]..w[1]]).collect())
 }

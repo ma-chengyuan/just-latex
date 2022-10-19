@@ -3,7 +3,7 @@
 **How do you render LaTeX fragments on the Web? MathJaX? KaTeX? Why not ... just use LaTeX?**
 
 ![license](https://img.shields.io/badge/license-MIT-red)
-[![shield](https://img.shields.io/badge/crates.io-0.1.2-green)](https://crates.io/crates/just-latex)
+[![shield](https://img.shields.io/badge/crates.io-0.1.3-green)](https://crates.io/crates/just-latex)
 
 just-latex is a simple [Pandoc](https://pandoc.org/) filter that chains a bunch of existing tools in the TeX ecosystem, enabling the use of the actual LaTeX engine to render LaTeX fragments when converting to HTML. It aims to occupy a niche and provide a new option for users hampered by MathJaX or KaTeX.
 
@@ -97,7 +97,16 @@ Pandoc filters cannot take arguments directly from command line, so just-latex r
 * It will first try looking for a `jlconfig.toml` under the same directory as the executable (this can be [ambiguous](https://doc.rust-lang.org/std/env/fn.current_exe.html) when symlinks are involved), and load that as a config file. 
 * Then it will look for a `jlconfig.toml` under the working directory, and load it if it's there.
 
-A config file does not need to specify all config items, as it merely overrides config items previously loaded. I also plan to add support for configuration on a per-document basis from the YAML metadata block in the future.
+A config file does not need to specify all config items, as it merely overrides config items previously loaded. 
+
+Starting 0.1.3, you can also configure just-latex on a per-document basis in the Front Matter YAML of your document. For example,
+```
+---
+jlconfig:
+  latex: lualatex
+---
+```
+This tells just-latex to use LuaLaTeX. Alternatively, you may also write `jlconfig.latex: lualatex` as a shorthand. Due to the way Pandoc handles metadata blocks, just-latex's in-file configuration as currently implemented may be buggy. Bug reports are always welcome!
 
 All configuration items are defined in `config.rs` with their default values.
 
@@ -133,6 +142,9 @@ Since 0.1.2 multi-page intermediate PDFs are supported. But **it is still recomm
 
 * It is your reponsibility to set up the preamble in a way that the font size of the LaTeX fragments matches that of the surrounding text in HTML. For example, the default text size of HTML is 12pt, so you should pass `[12pt]` as an option to the `\documentclass{article}`. Likewise, you should configure the header templates such that they match the size of your header.
 
+
+## Contributing
+Feel free to report any bugs or suggestions for improvement in the Issues section. PRs are also more than welcome.
 
 ## Is it Any Good?
 
