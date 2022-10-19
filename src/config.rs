@@ -14,7 +14,10 @@ pub struct Config {
     pub latex: String,
     /// Path to the dvisvgm executable.
     pub dvisvgm: String,
-    /// DVI mode?
+    /// Operating mode, either "pdf" or "dvi" or "xdv".
+    /// 
+    /// Should have really made this an enum. But writing manual impls for Deserialize does not seem
+    /// to worth the effort.
     pub mode: String,
     /// Defines the error tolerance for [`crate::x_range_for_y_range`] and
     /// [`crate::refine_y_range`].dvi_

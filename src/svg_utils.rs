@@ -30,15 +30,15 @@ pub fn paths_to_bboxes(tree: &usvg::Tree) -> Vec<PathBbox> {
 
 /// Parses raw svg data to a usvg Tree.
 ///
-/// Under DVI/XDV mode, dvisvgm embeds fonts into the svg that unfortunately will not be recoginized
-/// by usvg's parser by default (because it does not support @font-face), so we have to some hacks
-/// here to help it.
+/// Under DVI/XDV mode, dvisvgm embeds fonts into the svg that unfortunately will not be recognized
+/// by usvg's parser by default (because it does not support @font-face), so we have to do some 
+/// hacks here to help it.
 pub fn parse_to_tree(svg_data: &[u8]) -> Result<usvg::Tree> {
     let mut reader = quick_xml::Reader::from_bytes(svg_data);
     let mut options = usvg::Options::default();
 
     let font_face_regex = Regex::new(
-        // Follows the format of dvisvgm's FontWriter.cpp->FontWriter::writeCSSFontFace
+        // Follows the format of dvisvgm's FontWriter::writeCSSFontFace, defined in FontWriter.cpp.
         r"@font-face\{font-family:(\w+);src:url\(data:application/x-font-(\w+);base64,([-A-Za-z0-9+/=]+)\) format\('\w+'\);\}",
     )?;
 
@@ -72,6 +72,10 @@ pub fn parse_to_tree(svg_data: &[u8]) -> Result<usvg::Tree> {
 ///
 /// Checksums are not updated because ttf_parser does not check them by default anyway.
 fn patch_font(font: &[u8], family: &str) -> Result<Vec<u8>> {
+    debug_assert!(family.is_ascii()); // Need to check because we are going to encode the name as 
+    // Mac encoding which works with ASCII only. We could use Unicode, but TTF requires Unicode
+    // names to be encoded in UTF16BE and there's no easy way to do that in Rust without third-party
+    // libraries.
     let read_u16 = |offset: usize| u16::from_be_bytes(font[offset..offset + 2].try_into().unwrap());
     let read_u32 = |offset: usize| u32::from_be_bytes(font[offset..offset + 4].try_into().unwrap());
 
@@ -96,7 +100,8 @@ fn patch_font(font: &[u8], family: &str) -> Result<Vec<u8>> {
     };
     let format = read_u16(offset);
     if format != 0 {
-        bail!("wrong name table font version in font")
+        // Could happen if it's OTF font.
+        bail!("wrong name table version in font")
     }
     let mut n_records = read_u16(offset + 2) as usize;
     let string_offset = offset + (read_u16(offset + 4) as usize);

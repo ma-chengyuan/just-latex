@@ -19,25 +19,15 @@ use std::{
 use tempfile::TempDir;
 use xz2::{read::XzEncoder, stream::LzmaOptions};
 
+use crate::config::{Config, TemplateConfig};
 use crate::synctex::Scanner;
-use crate::{
-    config::{Config, TemplateConfig},
-    svgopt::optimize,
-};
 
 mod config;
-mod svg;
-mod svgopt;
+mod svg_optimize;
+mod svg_utils;
 mod synctex;
 
 fn main() -> Result<()> {
-    // env_logger::init();
-    /*
-    let data = std::fs::read_to_string("source-1.svg")?;
-    svg::parse_to_tree(&data);
-    return Ok(());
-    */
-
     let mut buffer = String::new();
     let _ = stdin().read_to_string(&mut buffer)?;
     let mut tree = Value::from_str(&buffer)?;
@@ -218,7 +208,6 @@ impl<'a> FragmentRenderer<'a> {
             return Ok(());
         }
 
-
         // In TeX 1 in = 72.72 pt = 72 bp, while in SVG 1 in = 72 pt.
         // Due to different definitions of pt we need a small scaling factor here.
         // See https://github.com/mgieseki/dvisvgm/issues/185
@@ -280,7 +269,7 @@ impl<'a> FragmentRenderer<'a> {
             .args([
                 "--stdout",
                 "--relative", // Empirically reduces SVG size.
-                "--page=1-", // Convert all pages.
+                "--page=1-",  // Convert all pages.
                 pdf_path.to_str().unwrap(),
             ])
             .current_dir(&working_path)
@@ -289,10 +278,10 @@ impl<'a> FragmentRenderer<'a> {
             bail!("fail to run dvisvgm");
         }
         // Split svgs because we might have multiple pages.
-        let svg_data = svg::split_svgs(&dvisvgm_command.stdout)?;
+        let svg_data = svg_utils::split_svgs(&dvisvgm_command.stdout)?;
         let svgs = svg_data
             .iter()
-            .map(|svg_data| svg::parse_to_tree(svg_data))
+            .map(|svg_data| svg_utils::parse_to_tree(svg_data))
             .collect::<Result<Vec<_>, _>>()?;
 
         // A unique class name for each svg is important because HTMLs from multiple posts
@@ -308,7 +297,10 @@ impl<'a> FragmentRenderer<'a> {
             })
             .collect::<Vec<_>>();
 
-        let bboxes = svgs.iter().map(svg::paths_to_bboxes).collect::<Vec<_>>();
+        let bboxes = svgs
+            .iter()
+            .map(svg_utils::paths_to_bboxes)
+            .collect::<Vec<_>>();
         let scanner = Scanner::new(pdf_path, &working_path);
         let mut seen_boxes = HashSet::new();
 
@@ -414,7 +406,7 @@ impl<'a> FragmentRenderer<'a> {
                     y_range.0 * TEX2SVG_SCALING + y_base,
                     y_range.1 * TEX2SVG_SCALING + y_base,
                 );
-                x_range = svg::x_range_for_y_range(
+                x_range = svg_utils::x_range_for_y_range(
                     &bboxes[svg_idx],
                     y_range.0,
                     y_range.1,
@@ -428,7 +420,7 @@ impl<'a> FragmentRenderer<'a> {
                 baseline = baseline * TEX2SVG_SCALING + y_base;
 
                 if let FragmentType::DisplayMath | FragmentType::RawBlock = item.ty {
-                    y_range = svg::refine_y_range(
+                    y_range = svg_utils::refine_y_range(
                         &bboxes[svg_idx],
                         y_range.0,
                         y_range.1,
@@ -500,7 +492,10 @@ impl<'a> FragmentRenderer<'a> {
         let svg_data = if self.config.optimizer.enabled {
             svgs.iter()
                 .map(|tree| -> Result<Cow<[u8]>> {
-                    Ok(Cow::Owned(optimize(tree, self.config.optimizer.eps)?))
+                    Ok(Cow::Owned(svg_optimize::optimize(
+                        tree,
+                        self.config.optimizer.eps,
+                    )?))
                 })
                 .collect::<Result<Vec<_>, _>>()?
         } else {
@@ -559,6 +554,16 @@ impl<'a> FragmentRenderer<'a> {
         });
         Ok(())
     }
+
+    // Below are a lot of tree-walking methods.
+    // I wasn't aware of any good libraries for parsing Pandoc ASTs when I wrote all of these. And
+    // by the time I knew pandoc-ast or pandoc-types I realized I reinvented the wheels again.
+    // That said now that I think of it again, there's something JustLaTeX needs that pandoc-ast
+    // does not yet offer: after visiting every math node we need to keep a series of mut references
+    // to the math nodes so we can change them to inline svgs later. Pandoc-ast's MutVisitor traits
+    // does saves a ton of the boilerplates below but the trait methods do not have lifetime
+    // parameters, making it impossible to store references for future use safely. Hopefully this
+    // justifies a ton of unwieldly practices below...
 
     /// Walks the tree and look for math nodes. Also creates and returns the reference to an empty
     /// final node, which we will modify later. Due to the borrow checker this is the only place we
