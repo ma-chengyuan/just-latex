@@ -425,9 +425,10 @@ impl<'a> FragmentRenderer<'a> {
                         y_range.0,
                         y_range.1,
                         self.config.y_range_tol,
-                        self.config.y_range_margin,
                     );
                 }
+                y_range.0 -= self.config.y_range_margin;
+                y_range.1 += self.config.y_range_margin;
 
                 let depth = match item.ty {
                     FragmentType::InlineMath(_) => y_range.1 - baseline,

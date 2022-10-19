@@ -31,7 +31,7 @@ pub fn paths_to_bboxes(tree: &usvg::Tree) -> Vec<PathBbox> {
 /// Parses raw svg data to a usvg Tree.
 ///
 /// Under DVI/XDV mode, dvisvgm embeds fonts into the svg that unfortunately will not be recognized
-/// by usvg's parser by default (because it does not support @font-face), so we have to do some 
+/// by usvg's parser by default (because it does not support @font-face), so we have to do some
 /// hacks here to help it.
 pub fn parse_to_tree(svg_data: &[u8]) -> Result<usvg::Tree> {
     let mut reader = quick_xml::Reader::from_bytes(svg_data);
@@ -72,10 +72,10 @@ pub fn parse_to_tree(svg_data: &[u8]) -> Result<usvg::Tree> {
 ///
 /// Checksums are not updated because ttf_parser does not check them by default anyway.
 fn patch_font(font: &[u8], family: &str) -> Result<Vec<u8>> {
-    debug_assert!(family.is_ascii()); // Need to check because we are going to encode the name as 
-    // Mac encoding which works with ASCII only. We could use Unicode, but TTF requires Unicode
-    // names to be encoded in UTF16BE and there's no easy way to do that in Rust without third-party
-    // libraries.
+    debug_assert!(family.is_ascii()); // Need to check because we are going to encode the name as
+                                      // Mac encoding which works with ASCII only. We could use Unicode, but TTF requires Unicode
+                                      // names to be encoded in UTF16BE and there's no easy way to do that in Rust without third-party
+                                      // libraries.
     let read_u16 = |offset: usize| u16::from_be_bytes(font[offset..offset + 2].try_into().unwrap());
     let read_u32 = |offset: usize| u32::from_be_bytes(font[offset..offset + 4].try_into().unwrap());
 
@@ -192,13 +192,7 @@ pub fn x_range_for_y_range(
 
 // TODO: perhaps merge the function below with the function above, to save one full traversal of
 // bboxes.
-pub fn refine_y_range(
-    bboxes: &[PathBbox],
-    y_min: f64,
-    y_max: f64,
-    tol: f64,
-    margin: f64,
-) -> (f64, f64) {
+pub fn refine_y_range(bboxes: &[PathBbox], y_min: f64, y_max: f64, tol: f64) -> (f64, f64) {
     let mut new_y_min = f64::MAX;
     let mut new_y_max = f64::MIN;
     let y_min = y_min - tol;
@@ -211,8 +205,8 @@ pub fn refine_y_range(
         }
     }
     if new_y_min == f64::MAX {
-        (y_min + tol - margin, y_max - tol + margin)
+        (y_min + tol, y_max - tol)
     } else {
-        (new_y_min - margin, new_y_max + margin)
+        (new_y_min, new_y_max)
     }
 }
