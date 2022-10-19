@@ -5,7 +5,7 @@
 ![license](https://img.shields.io/badge/license-MIT-red)
 [![shield](https://img.shields.io/badge/crates.io-0.1.3-green)](https://crates.io/crates/just-latex)
 
-just-latex is a simple [Pandoc](https://pandoc.org/) filter that chains a bunch of existing tools in the TeX ecosystem, enabling the use of the actual LaTeX engine to render LaTeX fragments when converting to HTML. It aims to occupy a niche and provide a new option for users hampered by MathJaX or KaTeX.
+Just-latex is a simple [Pandoc](https://pandoc.org/) filter that chains a bunch of existing tools in the TeX ecosystem, to enable the use of actual LaTeX engines to render LaTeX fragments when converting a document to HTML. It aims to occupy a niche and provide a new option for users hampered by MathJaX or KaTeX.
 
 ## Features
 
@@ -29,7 +29,7 @@ Another demo `examples/fwht.md` is actually a [blog post](https://danglingpointe
 
 The `examples` folder also contains a sample configuration file.
 
-*Note:* You can inspect the HTML code on Github here, but to actually see how it's rendered, you have to download the raw file -- Unfortunately somehow service like https://htmlpreview.github.io/ does not work here as the LZMA decompression script is not being loaded. Alternatively, `examples/demo.png` is a screenshot of the output HTML.
+*Note: Github limits preview of hosted HTML files for security reasons. If you want to check the htmls, you may use services such as https://htmlpreview.github.io. [Link to the demo page](https://htmlpreview.github.io/?https://github.com/ma-chengyuan/just-latex/blob/main/examples/demo.html).*
 
 ## Comparison with ...
 
@@ -51,7 +51,7 @@ These programs convert LaTeX *documents* to HTML whereas just-latex deals with L
 
 Also note that these systems aim to be clever by trying to identify certain elements in the input document and do them "the Web way," e.g. maths are converted to MathML or handed over to MathJaX and texts are extracted to be reflowed by the browser. That, in itself, seems like a source of troubles. 
 
-In comparison, just-latex are **small, simple and dumb**. It has just aboue 1000 lines of code in Rust and uses mature libraries in the TeX community so you can fully understand how it works in 10 minutes (you will see below) and be 99% confident the rendered result will be identical to the one you see in a PDF.
+In comparison, just-latex are **small, simple and dumb**. It has just about 1000 lines of code in Rust and uses mature libraries in the TeX community so you can fully understand how it works in 10 minutes (you will see below) and be 99% confident the rendered result will be identical to the one you see in a PDF.
 
 ### SwiftLaTeX
 
@@ -81,7 +81,7 @@ SwiftLaTeX is the entire TeX engine compiled to WebAssembly and running in the b
          class="svg-math" style="width:23.07pt;height:11.62pt; 
          top:2.66pt;position:relative;">
     ```
-    For inline fragments care will be taken to align the baseline of the image to the baseline of the surrounding text.
+    For inline fragments, care will be taken to align the baseline of the image to the baseline of the surrounding text.
 9. The SVG itself is LZMA-compressed, then base64-encoded and then stuffed into a short Javascript code that decompresses the SVG, generates an object URL and fills in the `...` part in the `<img>` tags above when the page loads. This code, along with the `<script>` that loads the [LZMA decompressor](https://www.npmjs.com/package/lzma) (7 KB in size), is appended to the document tree as a `RawBlock` node.
 10. The program returns the modified tree to Pandoc which finishes things up and output a single HTML. When the page loads you will see the rendered fragments exactly as they would appear in a PDF.
 
@@ -110,6 +110,15 @@ This tells just-latex to use LuaLaTeX. Alternatively, you may also write `jlconf
 
 All configuration items are defined in `config.rs` with their default values.
 
+### Modes
+Just-latex can operate in PDF or DVI/XDV mode, with PDF mode being the default. The speeds are similar. These modes differ in the intermediate format used. 
+
+Under PDF mode, just-latex instructs LaTeX engines to produce PDFs and dvisvgm to convert PDFs. Everything works great except that dvisvgm converts all texts to SVG paths with PDF input. As a result, the SVGs are bloated and the texts aren't selectable. Just-latex's internal optimizer is designed specifically for this painspot and could alleviate this problem greatly when the SVGs are not compressed, but not by that much after they are.
+
+Under DVI/XDV mode, dvisvgm can keep the texts and embed efficiently subsetted fonts in its output, resulting in much leaner SVGs and faster load time. (Unfortunately, the texts are still not selectable due to the use of fragment identifiers. This is being worked on.) In addition, browsers will be rendering the texts in fragments with the same text-rendering stack as body texts, so hopefully the rendering will be more consistent and faster. The caveat, though, is that DVI and XDV are almost-dead formats so some packages (notably TikZ in some scenarios) may need special configurations to work with them properly. Just-latex's internal SVG optimizer is also incompatible with DVI/XDV mode due to how usvg works, so it must be disabled.
+
+To switch modes, set `mode = "pdf"` or `"dvi"` or `"xdv"` in your config file. DVI mode works for pdfLaTeX only and XDV works for XeLaTeX only, so make sure the mode matches the engine you choose. Just-latex does not support a similar mode for LuaLaTeX because `dvilualatex` is ... well, not that useful for most cases. Use PDF mode if you have to use LuaLaTeX. (In general, LuaLaTeX is not a good choice because it is innately slower, a problem especially annoying when converting a large batch of documents.)
+
 ## Tips
 Everything in `$$`s is treated as math by Pandoc and just-latex will normally surround it with `\[` and `\]`. To write LaTeX without being surrounded in a math environment, you can:
 * Start the first line in `$$` with `%raw`. The program will detect this. Or,
@@ -125,7 +134,7 @@ Note that if you write complicated non-math content inside a `$$` block (*update
 
 Or, sometimes you may want a block that is solely dedicated to definition of macros or altering internal TeX variables. This is a problem because when just-latex asks SyncTeX where these code end up in the PDF it becomes confused -- such code do not produce any content on their own! Frustrated, SyncTeX returns the bounding box for the next fragment, which is wrong. In this case you must start such block with `%dontshow`, either in a `$$` block or a `{=tex}` block. This informs just-latex to only include it in the intermediate TeX file and not to call SyncTeX. You can see this in the demo file.
 
-Also note that you can no longer use `\TeX` and `\LaTeX`. This is *not* a bug because the two commands just can't be used in math mode in actual LaTeX -- *it is MathJaX which spoils us*. You should use `\text{\TeX}`, or something like. 
+Also note that you can no longer use `\TeX` and `\LaTeX`. This is *not* a bug because the two commands just can't be used in math mode in actual LaTeX -- *MathJaX spoils us!*. You should use `\text{\TeX}`, or something like 
 ```tex
 \let\oTeX=\TeX
 \def\TeX{\text{\oTeX}}
@@ -136,7 +145,9 @@ Since 0.1.2 multi-page intermediate PDFs are supported. But **it is still recomm
 
 ## Limitations 
 
-* Dvisvgm converts texts in PDF to SVG paths, so texts in rendered fragments are not selectable or copyable. Also this makes the resulting SVG files huge. With compression this program adds less than 100 KB to the generated HTML for a typical Markdown document (such as a blog post). (**This problem is being worked on**)
+* Texts in rendered fragments are not selectable or copyable for a variety of reasons. **This problem is being worked on.**
+
+* Generated SVG files can be huge, though with compression this program adds less than 100 KB to the generated HTML for a typical Markdown document (such as a blog post). **This problem is being worked on.**
 
 * TeX is slow, so is dvisvgm. Although the program itself runs quite fast converting a document still takes around 1 sec.
 
