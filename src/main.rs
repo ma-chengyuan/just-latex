@@ -31,9 +31,10 @@ mod svgopt;
 mod synctex;
 
 fn main() -> Result<()> {
+    // env_logger::init();
     /*
     let data = std::fs::read_to_string("source-1.svg")?;
-    svg::texts_to_bboxes(&data);
+    svg::parse_to_tree(&data);
     return Ok(());
     */
 
@@ -217,10 +218,10 @@ impl<'a> FragmentRenderer<'a> {
             return Ok(());
         }
 
-        // dvisvgm does very spurious scaling to the output svg even when no magnification arguments
-        // are passed. Besides the viewboxes are very weird.
-        // x_svg = x_tex * 0.996264;
-        // y_svg = y_tex * 0.996264 - page_height;
+
+        // In TeX 1 in = 72.72 pt = 72 bp, while in SVG 1 in = 72 pt.
+        // Due to different definitions of pt we need a small scaling factor here.
+        // See https://github.com/mgieseki/dvisvgm/issues/185
         const TEX2SVG_SCALING: f64 = 72.0 / 72.27;
 
         let (source_str, lines) = self.generate_latex_with_line_mappings();
@@ -276,7 +277,12 @@ impl<'a> FragmentRenderer<'a> {
             dvisvgm_command.arg("--font-format=ttf");
         }
         let dvisvgm_command = dvisvgm_command
-            .args(["--stdout", "--relative", "-p1-", pdf_path.to_str().unwrap()])
+            .args([
+                "--stdout",
+                "--relative", // Empirically reduces SVG size.
+                "--page=1-", // Convert all pages.
+                pdf_path.to_str().unwrap(),
+            ])
             .current_dir(&working_path)
             .output()?;
         if !dvisvgm_command.status.success() {
@@ -286,8 +292,8 @@ impl<'a> FragmentRenderer<'a> {
         let svg_data = svg::split_svgs(&dvisvgm_command.stdout)?;
         let svgs = svg_data
             .iter()
-            .map(|&svg| String::from_utf8_lossy(svg))
-            .collect::<Vec<_>>();
+            .map(|svg_data| svg::parse_to_tree(svg_data))
+            .collect::<Result<Vec<_>, _>>()?;
 
         // A unique class name for each svg is important because HTMLs from multiple posts
         // may be put together in the home page of a blog. Then the decompressing code of each page
@@ -302,18 +308,7 @@ impl<'a> FragmentRenderer<'a> {
             })
             .collect::<Vec<_>>();
 
-        let svg_and_bboxes = svgs
-            .iter()
-            .map(|svg| -> Result<_> {
-                let (tree, mut bboxes) = svg::paths_to_bboxes(svg)?;
-                if self.config.mode != "pdf" {
-                    bboxes.extend(svg::texts_to_bboxes(svg)?);
-                }
-                Ok((tree, bboxes))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let (svgs, bboxes): (Vec<_>, Vec<_>) = svg_and_bboxes.into_iter().unzip();
-
+        let bboxes = svgs.iter().map(svg::paths_to_bboxes).collect::<Vec<_>>();
         let scanner = Scanner::new(pdf_path, &working_path);
         let mut seen_boxes = HashSet::new();
 
@@ -406,8 +401,14 @@ impl<'a> FragmentRenderer<'a> {
             ) in regions.into_iter()
             {
                 let svg_idx = page as usize - 1;
-                let y_base = svgs[svg_idx].svg_node().view_box.rect.top();
-                let x_base = svgs[svg_idx].svg_node().view_box.rect.left();
+                // For whatever reason, the coordinate system of SVGs resulting from PDF
+                // conversion is translated.
+                let (x_base, y_base) = if self.config.mode == "pdf" {
+                    let view_box = &svgs[svg_idx].svg_node().view_box.rect;
+                    (view_box.left(), view_box.top())
+                } else {
+                    (0.0, 0.0)
+                };
                 // Convert everything from TeX coordinates to SVG coordinates.
                 y_range = (
                     y_range.0 * TEX2SVG_SCALING + y_base,
@@ -421,8 +422,8 @@ impl<'a> FragmentRenderer<'a> {
                     self.config.x_range_margin,
                 )
                 .unwrap_or((
-                    x_base + x_range.0 * TEX2SVG_SCALING,
-                    x_base + x_range.1 * TEX2SVG_SCALING,
+                    x_range.0 * TEX2SVG_SCALING + x_base,
+                    x_range.1 * TEX2SVG_SCALING + x_base,
                 ));
                 baseline = baseline * TEX2SVG_SCALING + y_base;
 

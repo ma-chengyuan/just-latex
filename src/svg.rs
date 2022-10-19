@@ -1,10 +1,5 @@
-use std::collections::HashMap;
-
-use anyhow::{Context, Error, Result};
-use ouroboros::self_referencing;
+use anyhow::{bail, Result};
 use regex::Regex;
-use rustybuzz::{shape, Face as ShaperFace, UnicodeBuffer};
-use ttf_parser::{Face, GlyphId};
 use usvg::{NodeExt, PathBbox};
 
 /// Splits a stream of multiple SVGs (returned by dvisvgm).
@@ -25,46 +20,28 @@ pub fn split_svgs(bytes: &[u8]) -> Result<Vec<&[u8]>> {
 }
 
 /// Finds paths and images in an SVG and computes their bboxes.
-pub fn paths_to_bboxes(input: &str) -> Result<(usvg::Tree, Vec<PathBbox>)> {
-    let options = usvg::Options::default();
-    let tree = usvg::Tree::from_str(input, &options.to_ref())?;
-    let mut results = vec![];
-    for node in tree.root().descendants() {
-        if !node.has_children() {
-            if let Some(bbox) = node.calculate_bbox() {
-                results.push(bbox);
-            }
-        }
-    }
-    Ok((tree, results))
+pub fn paths_to_bboxes(tree: &usvg::Tree) -> Vec<PathBbox> {
+    tree.root()
+        .descendants()
+        .filter(|node| !node.has_children())
+        .filter_map(|node| node.calculate_bbox())
+        .collect()
 }
 
-/// Finds text elements in an SVG produced by dvisvgm and computes their bboxes.
+/// Parses raw svg data to a usvg Tree.
 ///
-/// Uses a ton of dvisvgm-specific hacks. **ONLY** works for SVGs produced by dvisvgm.
-pub fn texts_to_bboxes(input: &str) -> Result<Vec<PathBbox>> {
-    let mut reader = quick_xml::Reader::from_str(input);
-    let mut font_map = HashMap::new();
-    let mut class_map = HashMap::new();
-    let mut bboxes = vec![];
+/// Under DVI/XDV mode, dvisvgm embeds fonts into the svg that unfortunately will not be recoginized
+/// by usvg's parser by default (because it does not support @font-face), so we have to some hacks
+/// here to help it.
+pub fn parse_to_tree(svg_data: &[u8]) -> Result<usvg::Tree> {
+    let mut reader = quick_xml::Reader::from_bytes(svg_data);
+    let mut options = usvg::Options::default();
 
     let font_face_regex = Regex::new(
         // Follows the format of dvisvgm's FontWriter.cpp->FontWriter::writeCSSFontFace
         r"@font-face\{font-family:(\w+);src:url\(data:application/x-font-(\w+);base64,([-A-Za-z0-9+/=]+)\) format\('\w+'\);\}",
     )?;
-    let font_group_regex = Regex::new(
-        // Follows the format of dvisvgm's SVGTree.cpp->SVGTree::appendFontStyles
-        r"text\.(f\d+) \{font-family:(\w+);font-size:(\d*\.\d*)px",
-    )?;
 
-    struct TextContext {
-        x: f64,
-        y: f64,
-        family: String,
-        size: f64,
-    }
-
-    let mut text_contexts = vec![];
     loop {
         match reader.read_event_unbuffered()? {
             quick_xml::events::Event::Eof => break,
@@ -75,156 +52,110 @@ pub fn texts_to_bboxes(input: &str) -> Result<Vec<PathBbox>> {
                     let font_family = capture.get(1).unwrap().as_str();
                     let _font_format = capture.get(2).unwrap().as_str();
                     let font_data = base64::decode(capture.get(3).unwrap().as_str())?;
-                    font_map.insert(String::from(font_family), OwnedFace::from_data(font_data)?);
-                }
-                for capture in font_group_regex.captures_iter(&cdata) {
-                    let font_class = capture.get(1).unwrap().as_str();
-                    let font_name = capture.get(2).unwrap().as_str();
-                    let font_size = capture.get(3).unwrap().as_str().parse::<f64>()?;
-                    class_map.insert(
-                        String::from(font_class),
-                        (String::from(font_name), font_size),
-                    );
-                }
-            }
-            quick_xml::events::Event::Start(e) => {
-                if e.name() == b"text" {
-                    let x = e.try_get_attribute("x")?.context("<text> without x")?;
-                    let y = e.try_get_attribute("y")?.context("<text> without x")?;
-                    let x_f = String::from_utf8_lossy(&x.value).parse::<f64>()?;
-                    let y_f = String::from_utf8_lossy(&y.value).parse::<f64>()?;
-                    let (family, size) = if let Some(class) = e.try_get_attribute("class")? {
-                        let class_str = String::from_utf8_lossy(&class.value).to_string();
-                        class_map
-                            .get(&class_str)
-                            .context("<text> with unknown class")?
-                            .clone()
-                    } else {
-                        let family = e
-                            .try_get_attribute("font-family")?
-                            .context("<text> with neither class nor font-family")?;
-                        let size = e
-                            .try_get_attribute("font-size")?
-                            .context("<text> with neither class nor font-family")?;
-                        let family_str = String::from_utf8_lossy(&family.value).to_string();
-                        let size_str = String::from_utf8_lossy(&size.value);
-                        // The font-size here does not contain px. See dvisvg SVGCharHandler.cpp
-                        // SVGCharTextHandler::createTextNode()
-                        let size_f = size_str.parse::<f64>()?;
-                        (family_str, size_f)
-                    };
-                    text_contexts.push(TextContext {
-                        x: x_f,
-                        y: y_f,
-                        family,
-                        size,
-                    });
-                } else if e.name() == b"tspan" {
-                    let last_context = text_contexts.last().context("<tspan> not in <text>")?;
-                    text_contexts.push(TextContext {
-                        x: if let Some(x) = e.try_get_attribute("x")? {
-                            String::from_utf8_lossy(&x.value).parse::<f64>()?
-                        } else {
-                            last_context.x
-                        },
-                        y: if let Some(y) = e.try_get_attribute("y")? {
-                            String::from_utf8_lossy(&y.value).parse::<f64>()?
-                        } else {
-                            last_context.y
-                        },
-                        family: last_context.family.clone(),
-                        size: last_context.size,
-                    });
-                }
-            }
-            quick_xml::events::Event::End(e) => {
-                if e.name() == b"text" || e.name() == b"tspan" {
-                    text_contexts.pop();
-                }
-            }
-            quick_xml::events::Event::Text(e) => {
-                if let Some(TextContext { x, y, family, size }) = text_contexts.last() {
-                    let inner = e.into_inner();
-                    let text = String::from_utf8_lossy(&inner);
-                    if text.len() > 0 {
-                        let face = font_map
-                            .get(family)
-                            .with_context(|| format!("unknown family {family}"))?;
-                        let scale = size / face.borrow_shaper_face().units_per_em() as f64;
-                        let mut buffer = UnicodeBuffer::new();
-                        let features = vec![];
-                        buffer.push_str(&text);
-                        let buffer = shape(face.borrow_shaper_face(), &features, buffer);
-                        let mut x = *x;
-                        let mut y = *y;
-                        let mut x_min = f64::MAX;
-                        let mut x_max = f64::MIN;
-                        let mut y_min = f64::MAX;
-                        let mut y_max = f64::MIN;
-                        for (info, pos) in buffer.glyph_infos().iter().zip(buffer.glyph_positions())
-                        {
-                            let bbox = face
-                                .borrow_face()
-                                .glyph_bounding_box(GlyphId(info.glyph_id as u16))
-                                .expect("unknown glyph id in shaper output");
-                            let g_x_min = (pos.x_offset as f64 + bbox.x_min as f64) * scale;
-                            let g_x_max = (pos.x_offset as f64 + bbox.x_max as f64) * scale;
-                            let g_y_min = (pos.y_offset as f64 + bbox.y_min as f64) * scale;
-                            let g_y_max = (pos.y_offset as f64 + bbox.y_max as f64) * scale;
-                            x_min = x_min.min(x + g_x_min);
-                            x_max = x_max.max(x + g_x_max);
-                            y_min = y_min.min(y - g_y_max);
-                            y_max = y_max.max(y - g_y_min);
-                            /*
-                            println!(
-                                "  {} {:.2}--{:.2}({:.2}) {:.2}--{:.2}({:.2})",
-                                info.glyph_id, x_min, x_max, x_max - x_min, y_min, y_max, y_max - y_min
-                            );
-                            */
-                            /*
-                            eprintln!(
-                                r#"<rect x="{x_min}" y="{y_min}" width="{}" height="{}" style="fill:none;stroke:red;"/>"#,
-                                x_max - x_min,
-                                y_max - y_min
-                            );
-                            */
-                            x += pos.x_advance as f64 * scale;
-                            y += pos.y_advance as f64 * scale;
-                        }
-                        bboxes.push(
-                            PathBbox::new(x_min, y_min, x_max - x_min, y_max - y_min).unwrap(),
-                        );
-                    }
+                    options
+                        .fontdb
+                        .load_font_data(patch_font(&font_data, font_family)?);
                 }
             }
             _ => {}
         }
     }
-    Ok(bboxes)
+
+    let tree = usvg::Tree::from_data(svg_data, &options.to_ref())?;
+    Ok(tree)
 }
 
-#[self_referencing]
-struct OwnedFace {
-    data: Vec<u8>,
-    #[borrows(data)]
-    #[covariant]
-    face: Face<'this>,
-    #[borrows(data)]
-    #[covariant]
-    shaper_face: ShaperFace<'this>,
-}
+/// Patch a TTF font generated by dvisvgm so that fontdb's database is happy with it.
+///
+/// A problem with dvisvgm's subsetted font file is that is does not have a name. Here we modify the
+/// name table and manually add a record to it.
+///
+/// Checksums are not updated because ttf_parser does not check them by default anyway.
+fn patch_font(font: &[u8], family: &str) -> Result<Vec<u8>> {
+    let read_u16 = |offset: usize| u16::from_be_bytes(font[offset..offset + 2].try_into().unwrap());
+    let read_u32 = |offset: usize| u32::from_be_bytes(font[offset..offset + 4].try_into().unwrap());
 
-impl OwnedFace {
-    fn from_data(data: Vec<u8>) -> Result<Self> {
-        OwnedFaceTryBuilder {
-            data,
-            face_builder: |data: &Vec<u8>| Face::parse(data, 0).map_err(Error::new),
-            shaper_face_builder: |data: &Vec<u8>| {
-                ShaperFace::from_slice(data, 0).ok_or_else(|| Error::msg("cannot parse face"))
-            },
+    let n_tables = read_u16(4) as usize;
+    let (offset, length, table_dir_entry_offset) = {
+        let mut table_dir_entry_offset = 0;
+        let mut table_offset = 0;
+        let mut table_length = 0;
+        for i in 0..n_tables {
+            let offset = i * 16 + 12;
+            let table_name = &font[offset..offset + 4];
+            if b"name" == table_name {
+                table_dir_entry_offset = offset;
+                table_offset = read_u32(offset + 8) as usize;
+                table_length = read_u32(offset + 12) as usize;
+            }
         }
-        .try_build()
+        if table_length == 0 {
+            bail!("font missing name table");
+        }
+        (table_offset, table_length, table_dir_entry_offset)
+    };
+    let format = read_u16(offset);
+    if format != 0 {
+        bail!("wrong name table font version in font")
     }
+    let mut n_records = read_u16(offset + 2) as usize;
+    let string_offset = offset + (read_u16(offset + 4) as usize);
+    let mut string = font[string_offset..offset + length].to_vec();
+    let mut has_name = false;
+    let mut has_post = false;
+    for i in 0..n_records {
+        let record_offset = offset + 6 + 12 * i;
+        let platform_id = read_u16(record_offset);
+        let name_id = read_u16(record_offset + 6);
+        if platform_id == 1 || platform_id == 0
+        // Unicode or MacRoman
+        {
+            match name_id {
+                1 /* family name */ => has_name = true,
+                6 /* postscript name */ => has_post = true,
+                _ => {}
+            }
+        }
+    }
+
+    let mut result = font.to_vec();
+    let new_offset = result.len();
+    // We'll write the modified name table at the end of the original font.
+    result.extend_from_slice(&font[offset..offset + 6 + 12 * n_records]);
+    if !has_name || !has_post {
+        let name_offset = string.len() as u16;
+        let name_length = family.len() as u16;
+        // Add the new name to the end of the string slice.
+        string.extend_from_slice(family.as_bytes());
+        if !has_name {
+            n_records += 1;
+            //                         Mac Roman English name
+            result.extend_from_slice(&[0, 1, 0, 0, 0, 0, 0, 1]);
+            result.extend(name_length.to_be_bytes());
+            result.extend(name_offset.to_be_bytes());
+        }
+        if !has_post {
+            n_records += 1;
+            //                         Mac Roman English postscript name
+            result.extend_from_slice(&[0, 1, 0, 0, 0, 0, 0, 6]);
+            result.extend(name_length.to_be_bytes());
+            result.extend(name_offset.to_be_bytes());
+        }
+    }
+    result.extend(string);
+    // Update n_records in the new table.
+    result[new_offset + 2..new_offset + 4].copy_from_slice(&(n_records as u16).to_be_bytes());
+    // Update string offset in the new table.
+    result[new_offset + 4..new_offset + 6]
+        .copy_from_slice(&(6 + 12 * n_records as u16).to_be_bytes());
+    // Update the table offset in the directory.
+    result[table_dir_entry_offset + 8..table_dir_entry_offset + 12]
+        .copy_from_slice(&(new_offset as u32).to_be_bytes());
+    // Update the table length in the directory.
+    let new_table_length = result.len() - new_offset;
+    result[table_dir_entry_offset + 12..table_dir_entry_offset + 16]
+        .copy_from_slice(&(new_table_length as u32).to_be_bytes());
+    Ok(result)
 }
 
 /// Given a slice of bounding boxes and a y range, compute the x range that exactly covers all
