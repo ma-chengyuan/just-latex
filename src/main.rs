@@ -252,11 +252,9 @@ impl<'a> FragmentRenderer<'a> {
             .current_dir(&working_path)
             .output()?;
         if !latex_command.status.success() {
-            eprintln!(
-                "latex error: {}",
-                String::from_utf8(latex_command.stdout).unwrap()
-            );
-            bail!("fail to run latex");
+            let error_message = String::from_utf8_lossy(&latex_command.stdout);
+            eprintln!("latex error: {error_message}");
+            bail!("fail to run latex: {error_message}",);
         }
 
         let mut dvisvgm_command = Command::new(self.config.dvisvgm);
@@ -275,7 +273,10 @@ impl<'a> FragmentRenderer<'a> {
             .current_dir(&working_path)
             .output()?;
         if !dvisvgm_command.status.success() {
-            bail!("fail to run dvisvgm");
+            bail!(
+                "fail to run dvisvgm: {}",
+                String::from_utf8_lossy(&dvisvgm_command.stderr).trim()
+            );
         }
         // Split svgs because we might have multiple pages.
         let svg_data = svg_utils::split_svgs(&dvisvgm_command.stdout)?;
@@ -537,7 +538,7 @@ impl<'a> FragmentRenderer<'a> {
             <script {extra_attribs}>
                 (function(){{
                     var s=URL.createObjectURL(new Blob(['"function"==typeof importScripts&&(importScripts("{lzma_js_path}"),onmessage=function(a){{LZMA.decompress(Uint8Array.from(atob(a.data),function(a){{return a.charCodeAt(0)}}),function(a,b){{postMessage(a)}})}})'], {{type: "text/javascript"}}));
-                    var f=function(a){{return function(e){{for(var f=URL.createObjectURL(new Blob([e.data],{{type:"image/svg+xml"}})),c=document.getElementsByClassName(a),b=0;b<c.length;b++){{var d=c[b].src.indexOf("#");-1!=d&&(c[b].src=f+c[b].src.substring(d))}}}}}};
+                    var f=function(a){{return function(e){{for(var f=URL.createObjectURL(new Blob([typeof e.data==="string"?e.data:new Uint8Array(e.data)],{{type:"image/svg+xml"}})),c=document.getElementsByClassName(a),b=0;b<c.length;b++){{var d=c[b].src.indexOf("#");-1!=d&&(c[b].src=f+c[b].src.substring(d))}}}}}};
                     {decompress_script}
                 }}());
             </script>
